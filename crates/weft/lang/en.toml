@@ -1,0 +1,73 @@
+# The app's words by key (English first; ja.toml lays over it).
+[app]
+title = "weft"
+hello = "Hello from weft."
+bug = "Report a problem (F12)"
+
+[title]
+search = "Command palette"
+bell = "Notices ({0} unread)"
+minimize = "Minimize"
+maximize = "Maximize"
+restore = "Restore"
+close = "Close"
+
+[notices]
+title = "Notices ({0} unread)"
+mark_read = "Mark all read"
+empty = "No notices"
+ago = "{} ago"
+ok = "done"
+info = "info"
+warn = "check"
+err = "failed"
+wait = "waiting"
+
+[palette]
+hint = "Type a command"
+none = "No command matches"
+report_bug = "Report a problem"
+reset_scale = "Reset the scale"
+settings = "Settings"
+help = "Key help"
+quit = "Quit"
+
+[keys]
+main = "Everywhere"
+fixed = "weft reads {} itself: bound here, it never runs."
+
+# The keymap's `desc` (English) as the help and the Keys page show it.
+[keydesc]
+"Open the settings" = "Open the settings"
+"Show the key help" = "Show the key help"
+"Quit" = "Quit"
+
+[help]
+title = "Keys"
+close = "Press F1 or Esc to close"
+fixed = "Always"
+this = "This list"
+scale = "Larger / smaller"
+scroll = "Scroll this list"
+close_row = "Close"
+
+[settings]
+general = "General"
+general_lead = "The language, the size and the clock, shared by every uchmk app."
+theme = "Theme"
+theme_lead = "The colours, shared by every uchmk app."
+display = "Display"
+theme_note = "Your own themes go in"
+no_folder = "This machine has no config folder."
+sample = "A sample in this theme"
+keys = "Keys"
+keys_lead = "Each operation's keys. Press a key to change one, ↺ to put the built-in ones back. Only what you change is written to keymap.toml."
+notify = "Notifications"
+notify_lead = "How weft tells you that a file could not be saved while its window is behind another. Written to [notify] in weft's config.toml."
+
+[notify]
+open = "Open"
+save_failed = "Could not save"
+save_failed_sound = "Sound when a file could not be saved"
+test_title = "weft: test notification"
+test_body = "A file that could not be saved is told like this."

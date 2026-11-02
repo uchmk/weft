@@ -1,0 +1,72 @@
+[package]
+name = "weft"
+description = "Markdown 専用エディター。キーだけで見出し・リスト・表などの構造を組み替え、日本語 IME に強く、フォルダー（vault）も扱う。kura の .md の opener"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+# `weft-com` (src/bin) is the console front for Windows, shipped as
+# `weft.com`; plain `cargo run` still means the window.
+default-run = "weft"
+
+# The checklist generator and the bug form's writer; their own tests run with the rest.
+[[example]]
+name = "make-testcheck"
+test = true
+
+[[example]]
+name = "make-bugform"
+test = true
+
+[build-dependencies]
+ito-winres = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+
+[dependencies]
+# Every ito crate at the same rev. scripts/ito-first.py says which crates an
+# app must have and which it must not replace; what ito lacks, ask ito for.
+ito-common = { git = "https://github.com/uchmk/ito", rev = "0126b34", features = ["clock", "egui"] }
+ito-i18n = { git = "https://github.com/uchmk/ito", rev = "0126b34", features = ["edit"] }
+ito-theme = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# The settings screen: language / clock / theme pages, keys_page, notify_page, update_card.
+ito-prefs = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+ito-keys = { git = "https://github.com/uchmk/ito", rev = "0126b34", features = ["egui"] }
+ito-keymap = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# `--keys "<script>"`: the real window driven without a person.
+ito-keyscript = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# `?` / F1: the key help.
+ito-help = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# System notification, sound, webhook.
+ito-notify = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# F12: an issue form filled with the version, OS and what the app knows.
+ito-bugreport = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# The window's own title bar (drag, caption buttons, the palette box, the bell).
+ito-titlebar = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# The bottom status bar: the app's items, the clock at the right end.
+ito-statusbar = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# The list the bell opens.
+ito-notices = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# Ctrl+Shift+P. Optional: drop it when the app has no commands to list.
+ito-palette = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# `weft.com` and the answers `out` and `err` write.
+ito-console = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# The settings' "open the file / folder" (and, later, `$EDITOR`).
+ito-openin = { git = "https://github.com/uchmk/ito", rev = "0126b34" }
+# The monospace face common.toml names (mono_font), with the Japanese one behind it.
+ito-fonts = { git = "https://github.com/uchmk/ito", rev = "0126b34", features = ["egui"] }
+# config.toml's [notify] (the settings' Notifications page).
+serde = { version = "1", features = ["derive"] }
+toml = "1.1"
+# eframe's own defaults, but for `winit/default`: that draws the title on
+# Wayland's window frame with ab_glyph, which brings the unmaintained ttf-parser.
+eframe = { version = "0.36", default-features = false, features = ["accesskit", "default_fonts", "links", "wayland", "web_screen_reader", "wgpu", "x11"] }
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita-notitle"] }
+egui = "0.36"
+
+[features]
+# Test builds only: notifications go to a file (ITO_NOTIFY_SINK) instead of the screen. Add `ito-tray/test-hook` here if the app has a tray.
+test-hooks = ["ito-notify/test-sink"]
+
+[dev-dependencies]
+# TESTING.md -> the lanes' check tables (examples/make-testcheck.rs).
+ito-testcheck = { git = "https://github.com/uchmk/ito", rev = "0126b34" }

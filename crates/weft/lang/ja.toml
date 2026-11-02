@@ -1,0 +1,70 @@
+[app]
+hello = "weft です。"
+bug = "不具合を報告 (F12)"
+
+[title]
+search = "コマンド パレット"
+bell = "通知（未読 {0}）"
+minimize = "最小化"
+maximize = "最大化"
+restore = "元に戻す"
+close = "閉じる"
+
+[notices]
+title = "通知（未読 {0}）"
+mark_read = "すべて既読にする"
+empty = "通知はありません"
+ago = "{}前"
+ok = "完了"
+info = "情報"
+warn = "要確認"
+err = "失敗"
+wait = "待機中"
+
+[palette]
+hint = "コマンドを入力"
+none = "一致するコマンドはありません"
+report_bug = "不具合を報告"
+reset_scale = "拡大率を戻す"
+settings = "設定"
+help = "キーのヘルプ"
+quit = "終了"
+
+[keys]
+main = "どこでも"
+fixed = "{} は weft が先に読むので、ここに割り当てても動きません。"
+
+[keydesc]
+"Open the settings" = "設定を開く"
+"Show the key help" = "キーのヘルプを見る"
+"Quit" = "終了"
+
+[help]
+title = "キー"
+close = "F1・Esc で閉じる"
+fixed = "いつでも"
+this = "この一覧"
+scale = "大きく / 小さく"
+scroll = "この一覧を送る"
+close_row = "閉じる"
+
+[settings]
+general = "一般"
+general_lead = "言語・大きさ・時計。uchmk のどのアプリでも共通です。"
+theme = "テーマ"
+theme_lead = "色。uchmk のどのアプリでも共通です。"
+display = "表示"
+theme_note = "自分のテーマの置き場所:"
+no_folder = "このマシンには設定のフォルダがありません。"
+sample = "このテーマでの見本"
+keys = "キー"
+keys_lead = "操作ごとのキー。キーを押して変え、↺ で既定に戻します。keymap.toml には変えた分だけを書きます。"
+notify = "通知"
+notify_lead = "窓が後ろにあるときに、ファイルを保存できなかったことの知らせ方。weft の config.toml の [notify] に書きます。"
+
+[notify]
+open = "開く"
+save_failed = "保存できなかった"
+save_failed_sound = "保存できなかったときの音"
+test_title = "weft: 試しの通知"
+test_body = "保存できなかったときはこのように知らせます。"

@@ -1,0 +1,801 @@
+//! weft: Markdown 専用エディター。キーだけで見出し・リスト・表などの構造を組み替え、日本語 IME に強く、フォルダー（vault）も扱う。kura の .md の opener
+//!
+//! What is wired here: the window (its place kept, its own title bar with the
+//! bell and the notice list), common.toml's theme, language and scale (and
+//! the settings screen that writes them, Ctrl+,), `--version` / `--help`,
+//! F12 (the bug report), `--keys` (a script that drives the window for a
+//! test lane), keymap.toml (Ctrl+Q quits) and the key help (F1).
+//! The editor itself is still to come: see TODO.md and docs/design.md.
+
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
+mod envreport;
+mod help;
+mod i18n;
+mod icon;
+mod keymap;
+mod notify;
+mod prefs;
+mod settings;
+
+use std::path::PathBuf;
+
+use ito_common::window::{Saved, Tracker};
+use ito_keymap::Match;
+use ito_keys::Key;
+use ito_keyscript::{Do, Runner, Step};
+
+/// The window's icon, in pixels square.
+const ICON_PX: u32 = 128;
+
+const REPO: &str = "https://github.com/uchmk/weft";
+
+const USAGE: &str = "\
+weft — Markdown 専用エディター。キーだけで見出し・リスト・表などの構造を組み替え、日本語 IME に強く、フォルダー（vault）も扱う。kura の .md の opener
+
+usage: weft [--version | --help | env | --keys SCRIPT]
+
+  env            print what a bug report needs (version, files, last run); no window
+  --keys SCRIPT  press these keys once the window is up, as kura's --keys;
+                 WEFT_KEYS_DONE names the file that says how it ended
+";
+
+/// The sizes of the screen: body 13, buttons and status 12, small 11, the big heading 18;
+/// a button's padding is 10 by 3 (as the other uchmk apps).
+fn type_scale(style: &mut egui::Style) {
+    use egui::{
+        FontFamily::{Monospace, Proportional},
+        FontId, TextStyle,
+    };
+    style.text_styles.insert(TextStyle::Body, FontId::new(13.0, Proportional));
+    style.text_styles.insert(TextStyle::Button, FontId::new(12.0, Proportional));
+    style.text_styles.insert(TextStyle::Small, FontId::new(11.0, Proportional));
+    style.text_styles.insert(TextStyle::Heading, FontId::new(18.0, Proportional));
+    style.text_styles.insert(TextStyle::Monospace, FontId::new(12.0, Monospace));
+    style.spacing.button_padding = egui::vec2(10.0, 3.0);
+}
+
+struct App {
+    table: ito_i18n::Table,
+    /// common.toml, the themes, keymap.toml and config.toml's `[notify]`,
+    /// kept current by a watcher; the settings screen's state.
+    prefs: prefs::Prefs,
+    settings_open: bool,
+    /// The key help (F1) while it is open.
+    help: help::Help,
+    tracker: Option<Tracker>,
+    lang: String,
+    /// The last scale change, as the line the status bar shows.
+    scale_note: Option<String>,
+    /// What the bell lists, oldest first. `()` is where a click goes: weft
+    /// has no place to jump to yet (a file and a line, once it edits).
+    notices: Vec<ito_notices::Notice<()>>,
+    next_notice: u64,
+    /// The list under the bell is open, and where the bell was last drawn.
+    bell_open: bool,
+    bell_at: egui::Rect,
+    /// The command palette while it is open (Ctrl+Shift+P, or the bar's box).
+    palette: Option<ito_palette::View>,
+    /// The Japanese face, read off the UI thread; `None` once it is registered.
+    font: Option<std::sync::mpsc::Receiver<Option<Vec<u8>>>>,
+    /// The `--keys` script while it plays, and what its steps ask the frame to do.
+    script: Option<Runner>,
+    todo: Vec<Do>,
+    /// The keys in force (defaults/keymap.toml under the person's own), the
+    /// chord typed so far, and what the person's files got wrong (under the
+    /// bell, once).
+    keys: keymap::Keys,
+    key_pending: Vec<Key>,
+    key_notes: Vec<String>,
+}
+
+/// What the palette can do. Add a variant and an entry in `commands` for each
+/// command the app gets.
+#[derive(Clone, Copy)]
+enum Command {
+    ReportBug,
+    ResetScale,
+    Settings,
+    Help,
+    Quit,
+}
+
+impl App {
+    fn new(cc: &eframe::CreationContext<'_>, saved: &Saved, script: Option<Runner>) -> Self {
+        saved.put(cc);
+        // What this run drew with, for the bug report and `weft env`.
+        let mut used = ito_common::runinfo::RunInfo::new(env!("CARGO_PKG_VERSION"));
+        if let Some(rs) = cc.wgpu_render_state.as_ref() {
+            let info = rs.adapter.get_info();
+            used.adapter = info.name;
+            used.backend = format!("{:?}", info.backend);
+            used.device = format!("{:?}", info.device_type);
+        }
+        used.ppp = cc.egui_ctx.pixels_per_point();
+        ito_common::runinfo::save("weft", &used);
+        let base = ito_common::base_dir();
+        let mut prefs = prefs::Prefs::load(base.clone());
+        let mut warnings: Vec<String> = prefs.common_warn.iter().chain(&prefs.theme_warn).cloned().collect();
+        let lang = i18n::resolve(prefs.common.language.as_deref());
+        let (table, errors) = i18n::table(&lang);
+        warnings.extend(errors);
+        let own = base.as_deref().map(prefs::keymap_path);
+        let (keys, mut key_notes) = load_keys(own.as_deref());
+        for w in warnings.iter().chain(&key_notes) {
+            eprintln!("weft: {w}");
+        }
+        // What common.toml got wrong goes under the bell too, once.
+        key_notes.extend(warnings);
+        prefs.watch(&cc.egui_ctx);
+        prefs.apply_theme(&cc.egui_ctx);
+        cc.egui_ctx.set_visuals(ito_theme::colors().visuals());
+        cc.egui_ctx.all_styles_mut(type_scale);
+        // The scale is common.toml's, so egui's own Ctrl+= / Ctrl+- stay out of it.
+        cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        cc.egui_ctx.set_zoom_factor(prefs.common.scale_or_one());
+        Self {
+            table,
+            prefs,
+            settings_open: false,
+            help: help::Help::default(),
+            tracker: saved.tracker(),
+            lang,
+            scale_note: None,
+            notices: Vec::new(),
+            next_notice: 0,
+            bell_open: false,
+            bell_at: egui::Rect::NOTHING,
+            palette: None,
+            font: Some(font_reader(&cc.egui_ctx)),
+            script,
+            todo: Vec::new(),
+            keys,
+            key_pending: Vec::new(),
+            key_notes,
+        }
+    }
+
+    /// An app with nothing read and no window (the tests).
+    #[cfg(test)]
+    fn for_tests() -> Self {
+        let (table, _) = i18n::table("en");
+        let (keys, _) = keymap::Keys::load(None);
+        Self {
+            table,
+            prefs: prefs::Prefs::empty(),
+            settings_open: false,
+            help: help::Help::default(),
+            tracker: None,
+            lang: "en".to_owned(),
+            scale_note: None,
+            notices: Vec::new(),
+            next_notice: 0,
+            bell_open: false,
+            bell_at: egui::Rect::NOTHING,
+            palette: None,
+            font: None,
+            script: None,
+            todo: Vec::new(),
+            keys,
+            key_pending: Vec::new(),
+            key_notes: Vec::new(),
+        }
+    }
+
+    /// The keys of the frame that the keymap may run: after the fixed ones
+    /// (F12, the palette, the scale) took theirs, and not while the palette
+    /// is open. A bare character goes to the widget that has the focus.
+    fn read_keys(&mut self, ctx: &egui::Context) {
+        if self.palette.is_some() {
+            return;
+        }
+        let typing = ctx.memory(|m| m.focused().is_some());
+        let events = ctx.input(|i| i.events.clone());
+        for e in events {
+            let k = match e {
+                egui::Event::Key { key, pressed: true, modifiers, .. } => ito_keys::from_egui(key, &modifiers),
+                egui::Event::Text(t) if !typing => t.chars().next().map(Key::char),
+                _ => None,
+            };
+            if let Some(k) = k {
+                self.press(ctx, k);
+            }
+        }
+    }
+
+    /// One key of a chord: run what it completes, wait for more, or drop
+    /// what led nowhere (and try the key alone).
+    fn press(&mut self, ctx: &egui::Context, k: Key) {
+        self.key_pending.push(k);
+        let run = match self.keys.resolve(&self.key_pending) {
+            Match::Exact(b) => b.run.clone(),
+            Match::Pending(_) => return,
+            Match::None => {
+                let chord = self.key_pending.len() > 1;
+                self.key_pending.clear();
+                if chord {
+                    self.press(ctx, k);
+                }
+                return;
+            }
+        };
+        self.key_pending.clear();
+        for c in run {
+            self.run_key(ctx, c);
+        }
+    }
+
+    /// What a bound key does.
+    fn run_key(&mut self, ctx: &egui::Context, c: keymap::Cmd) {
+        match c {
+            keymap::Cmd::Run("quit") => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            keymap::Cmd::Run("settings") => self.open_settings(),
+            keymap::Cmd::Run("help") => self.help.toggle(),
+            keymap::Cmd::Run(_) | keymap::Cmd::None => {}
+        }
+    }
+
+    /// The settings cover the window; the help, if open, goes with it.
+    fn open_settings(&mut self) {
+        self.help.close();
+        self.settings_open = true;
+    }
+
+    /// What the window shows, for `<State:name>` and the done file.
+    fn report(&self) -> String {
+        let screen = if self.settings_open {
+            "settings"
+        } else if self.help.open {
+            "help"
+        } else {
+            "main"
+        };
+        let mut out = format!("screen: {screen}\nlang: {}\n", self.lang);
+        if self.settings_open {
+            out.push_str(&format!("page: {}\n", self.prefs.state.page));
+        }
+        out.push_str(&format!("palette: {}\nnotices: {}\n", if self.palette.is_some() { "open" } else { "closed" }, self.notices.len()));
+        out
+    }
+
+    /// `<State:name>` and the done file: what the window shows, then `tail`.
+    fn write_state(&self, path: PathBuf, tail: &str) {
+        let text = format!("{}{tail}", self.report());
+        if let Err(e) = std::fs::write(&path, text) {
+            say(&format!("weft --keys: {}: {e}", path.display()), true);
+        }
+    }
+
+    /// The steps of the `--keys` script that are not keys: pictures, state
+    /// files, the theme and the language (set on this window's copy of
+    /// common.toml, which `sync_common` applies; the owner's file is not
+    /// written), quit, and the done file.
+    fn script(&mut self, ctx: &egui::Context) {
+        let Some(script) = &mut self.script else { return };
+        if let Some(err) = script.shot(ctx) {
+            say(&format!("weft --keys: {err}"), true);
+        }
+        for d in std::mem::take(&mut self.todo) {
+            let Some(script) = &self.script else { return };
+            match d {
+                Do::State(name) => self.write_state(script.dir.join(format!("{name}.txt")), ""),
+                Do::Quit => {
+                    // `<Quit>` finishes the run itself, so `on_exit` finds it over and writes nothing.
+                    if let Some(done) = script.done.clone() {
+                        self.write_state(done, &ito_keyscript::quit_report(script.left()));
+                    }
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                Do::Theme(name) => {
+                    self.prefs.common.theme = Some(name.clone());
+                    self.prefs.apply_theme(ctx);
+                    if let Some(e) = self.prefs.theme_err.take() {
+                        say(&format!("weft --keys: <Theme:{name}>: {e}"), true);
+                    }
+                }
+                Do::Lang(code) => {
+                    self.prefs.common.language = Some(code.clone());
+                    for e in self.sync_lang() {
+                        say(&format!("weft --keys: <Lang:{code}>: {e}"), true);
+                    }
+                }
+                // weft defines no readings of its own yet.
+                Do::Read { .. } => {}
+                Do::Failed { step, why } => {
+                    say(&format!("weft --keys: {step}: {why}"), true);
+                    if let Some(done) = script.done.clone() {
+                        self.write_state(done, &ito_keyscript::failed_report(&step, &why, script.left()));
+                    }
+                    std::process::exit(ito_keyscript::FAILED_EXIT);
+                }
+                Do::Done => {
+                    if let Some(done) = script.done.clone() {
+                        self.write_state(done, "keys: done\n");
+                    }
+                }
+            }
+        }
+        if let Some(due) = self.script.as_ref().and_then(Runner::due) {
+            ctx.request_repaint_after(due);
+        }
+    }
+
+    /// Registers the faces once the reader thread has the Japanese one: the
+    /// monospace face common.toml names (`mono_font`), with the Japanese one
+    /// behind both families so names do not draw as boxes.
+    fn take_font(&mut self, ctx: &egui::Context) {
+        let Some(rx) = &self.font else { return };
+        let bytes = match rx.try_recv() {
+            Ok(b) => b,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(_) => None,
+        };
+        self.font = None;
+        let mut fonts = egui::FontDefinitions::default();
+        ito_fonts::register(&mut fonts, self.prefs.common.mono_font_or_default());
+        if let Some(bytes) = bytes {
+            fonts.font_data.insert("japanese".to_owned(), std::sync::Arc::new(egui::FontData::from_owned(bytes)));
+            for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+                fonts.families.entry(family).or_default().push("japanese".to_owned());
+            }
+        }
+        ctx.set_fonts(fonts);
+    }
+
+    /// Ctrl+wheel and Ctrl+= / Ctrl+- / Ctrl+0: the whole window's scale, one
+    /// step at a time. It is applied now and written to common.toml off the UI
+    /// thread, so the other apps at the same desk follow within 2 seconds.
+    fn rescale(&mut self, ctx: &egui::Context) {
+        use ito_common::ScaleTo;
+        let wheel = ctx.input(|i| if i.modifiers.command { i.smooth_scroll_delta.y } else { 0.0 });
+        let to = if wheel > 0.0 {
+            Some(ScaleTo::In)
+        } else if wheel < 0.0 {
+            Some(ScaleTo::Out)
+        } else {
+            let key = |k| ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, k));
+            if key(egui::Key::Equals) || key(egui::Key::Plus) {
+                Some(ScaleTo::In)
+            } else if key(egui::Key::Minus) {
+                Some(ScaleTo::Out)
+            } else if key(egui::Key::Num0) {
+                Some(ScaleTo::Reset)
+            } else {
+                None
+            }
+        };
+        if let Some(to) = to {
+            self.scale_to(ctx, to);
+        }
+    }
+
+    fn scale_to(&mut self, ctx: &egui::Context, to: ito_common::ScaleTo) {
+        let now = self.prefs.common.scale_or_one();
+        let next = ito_common::scale_step(now, to);
+        if next == now {
+            return;
+        }
+        self.prefs.set_scale(next, self.table.tr("settings.no_folder"));
+        ctx.set_zoom_factor(next);
+        ito_statusbar::scale_changed(ctx, next);
+        self.scale_note = Some(ito_common::scale_text(next, &self.lang));
+    }
+
+    /// common.toml changed (the settings, another app at the same desk, an
+    /// editor): the language, the theme and the scale follow; keymap.toml's
+    /// change reloads the keys. What a writer could not do goes under the bell.
+    fn sync_common(&mut self, ctx: &egui::Context) {
+        self.prefs.pump();
+        if let Some(e) = self.prefs.failed.take() {
+            self.key_notes.push(e);
+        }
+        match self.prefs.keymap_new.take() {
+            Some(None) => {
+                let own = self.prefs.base.as_deref().map(prefs::keymap_path);
+                let (keys, notes) = load_keys(own.as_deref());
+                self.keys = keys;
+                self.key_pending.clear();
+                self.key_notes.extend(notes);
+            }
+            Some(Some(e)) => self.key_notes.push(e),
+            None => {}
+        }
+        for e in self.sync_lang() {
+            self.key_notes.push(e);
+        }
+        self.prefs.apply_theme(ctx);
+        if let Some(e) = self.prefs.theme_err.take() {
+            self.key_notes.push(e);
+        }
+        let scale = self.prefs.common.scale_or_one();
+        if ctx.zoom_factor() != scale {
+            ctx.set_zoom_factor(scale);
+        }
+    }
+
+    /// The table follows common.toml's language; the lang files' errors come back.
+    fn sync_lang(&mut self) -> Vec<String> {
+        let lang = i18n::resolve(self.prefs.common.language.as_deref());
+        if lang == self.lang {
+            return Vec::new();
+        }
+        let (table, errors) = i18n::table(&lang);
+        self.lang = lang;
+        self.table = table;
+        errors
+    }
+
+    /// The bottom bar: the app's items on the left (add yours here), the clock
+    /// from common.toml at the right end, the scale's words after a change.
+    fn status_bar(&mut self, ui: &mut egui::Ui) {
+        let clock = self.prefs.common.clock_or(None);
+        let spec = ito_statusbar::Spec { clock: &clock, lang: &self.lang, opacity: 1.0 };
+        let note = self.scale_note.clone();
+        ito_statusbar::show(
+            ui,
+            &spec,
+            |ui| {
+                if let Some(n) = &note {
+                    ito_statusbar::item(ui, n, ito_theme::colors().dim);
+                }
+            },
+            |_| {},
+        );
+    }
+
+    /// The window's own bar: the logo and the name, the palette box, the bell
+    /// and the caption buttons. The bell opens the list of notices.
+    fn title_bar(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        let unread = ito_notices::unread(&self.notices);
+        let bell = self.table.trf("title.bell", &[&unread.to_string()]);
+        let spec = ito_titlebar::Spec {
+            own: !cfg!(target_os = "macos"),
+            left: if cfg!(target_os = "macos") { 76.0 } else { 0.0 },
+            maximized,
+            unread,
+            any_error: ito_notices::any_error(&self.notices),
+            centre: true,
+            right_min: 0.0,
+            words: ito_titlebar::Words {
+                search: self.table.tr("title.search"),
+                search_key: "Ctrl+Shift+P",
+                bell: &bell,
+                minimize: self.table.tr("title.minimize"),
+                maximize: self.table.tr("title.maximize"),
+                restore: self.table.tr("title.restore"),
+                close: self.table.tr("title.close"),
+            },
+        };
+        let name = self.table.tr("app.title").to_string();
+        let out = ito_titlebar::show(
+            ui,
+            &spec,
+            // The logo, then the name (as the other uchmk apps' title bars).
+            |ui, rect| ito_titlebar::brand(ui, rect, &name, icon::pixels),
+            |_, _| {},
+        );
+        if let Some(r) = out.bell_rect {
+            self.bell_at = r;
+        }
+        if out.bell {
+            self.bell_open = !self.bell_open;
+        }
+        if out.search {
+            self.palette = Some(ito_palette::View::new());
+        }
+        if let Some(op) = out.window {
+            ito_titlebar::apply(&ctx, op, maximized);
+        }
+    }
+
+    fn commands(&self) -> Vec<ito_palette::Entry<Command>> {
+        let t = &self.table;
+        vec![
+            ito_palette::Entry::new(t.tr("palette.report_bug"), "F12", Command::ReportBug),
+            ito_palette::Entry::new(t.tr("palette.reset_scale"), "Ctrl+0", Command::ResetScale),
+            ito_palette::Entry::new(t.tr("palette.settings"), self.keys.label("settings"), Command::Settings),
+            ito_palette::Entry::new(t.tr("palette.help"), self.keys.label("help"), Command::Help),
+            ito_palette::Entry::new(t.tr("palette.quit"), self.keys.label("quit"), Command::Quit),
+        ]
+    }
+
+    /// Ctrl+Shift+P opens the palette; while it is open it takes the keys.
+    fn command_palette(&mut self, ctx: &egui::Context) {
+        let open = ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::P));
+        if open && self.palette.is_none() {
+            self.palette = Some(ito_palette::View::new());
+        }
+        let Some(mut view) = self.palette.take() else { return };
+        let c = ito_theme::colors();
+        let style = ito_palette::Style {
+            panel: c.raised(),
+            border: c.border,
+            text: c.fg,
+            dim: c.dim,
+            selected_bg: c.chosen(),
+            selected_text: c.strong(),
+            hit: c.wait,
+            accent: c.done,
+        };
+        let words = ito_palette::Words { hint: self.table.tr("palette.hint"), none: self.table.tr("palette.none"), header: "", footer: "" };
+        match ito_palette::show(ctx, &mut view, &self.commands(), &style, &words) {
+            None => self.palette = Some(view),
+            Some(ito_palette::Answer::Pick(Command::ReportBug)) => self.report_bug(ctx),
+            Some(ito_palette::Answer::Pick(Command::ResetScale)) => self.scale_to(ctx, ito_common::ScaleTo::Reset),
+            Some(ito_palette::Answer::Pick(Command::Settings)) => self.open_settings(),
+            Some(ito_palette::Answer::Pick(Command::Help)) => self.help.toggle(),
+            Some(ito_palette::Answer::Pick(Command::Quit)) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Some(_) => {}
+        }
+    }
+
+    /// What the files got wrong, and what a writer could not do, go under the bell.
+    fn take_notices(&mut self) {
+        for title in std::mem::take(&mut self.key_notes) {
+            self.next_notice += 1;
+            self.notices.push(ito_notices::Notice {
+                id: self.next_notice,
+                at: std::time::SystemTime::now(),
+                kind: ito_notices::Kind::Warn,
+                title,
+                note: None,
+                go: None,
+                read: false,
+            });
+        }
+    }
+
+    /// The list under the bell, while it is open.
+    fn notice_list(&mut self, ctx: &egui::Context) {
+        if !self.bell_open {
+            return;
+        }
+        let t = &self.table;
+        let title = t.trf("notices.title", &[&ito_notices::unread(&self.notices).to_string()]);
+        let words = ito_notices::Words {
+            title: &title,
+            mark_read: t.tr("notices.mark_read"),
+            empty: t.tr("notices.empty"),
+            ago: t.tr("notices.ago"),
+            kinds: [t.tr("notices.ok"), t.tr("notices.info"), t.tr("notices.warn"), t.tr("notices.err"), t.tr("notices.wait")],
+        };
+        match ito_notices::show(ctx, self.bell_at, &self.notices, &words) {
+            Some(ito_notices::Action::Open(_, id)) => {
+                self.notices.iter_mut().filter(|n| n.id == id).for_each(|n| n.read = true);
+                self.bell_open = false;
+            }
+            Some(ito_notices::Action::ReadAll) => self.notices.iter_mut().for_each(|n| n.read = true),
+            Some(ito_notices::Action::Close) => self.bell_open = false,
+            None => {}
+        }
+    }
+
+    /// F12: the browser opens the issue form filled with the version, the OS
+    /// and what the app knows.
+    fn report_bug(&self, ctx: &egui::Context) {
+        let spec = ito_bugreport::Spec { app: "weft", version: env!("CARGO_PKG_VERSION"), repo: REPO, template: "bug_report.yml" };
+        let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(std::path::PathBuf::from);
+        let context = ito_bugreport::Context { home: home.as_deref(), ..Default::default() };
+        let url = ito_bugreport::url(&spec, &[("context", ito_bugreport::context(&context))]);
+        ctx.open_url(egui::OpenUrl::new_tab(url));
+    }
+}
+
+impl eframe::App for App {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        self.sync_common(&ctx);
+        // The Keys page is taking a key: every key is that key, F12 too.
+        let taking = self.settings_open && self.prefs.keys_edit.busy();
+        if !taking && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F12)) {
+            self.report_bug(&ctx);
+        }
+        if !taking {
+            self.rescale(&ctx);
+        }
+        if let Some(t) = &mut self.tracker {
+            t.follow(&ctx);
+        }
+        egui::Panel::top("titlebar")
+            .exact_size(ito_titlebar::HEIGHT)
+            .frame(egui::Frame::NONE.fill(ito_theme::colors().bg))
+            .show(ui, |ui| self.title_bar(ui));
+        egui::Panel::bottom("statusbar").exact_size(ito_statusbar::HEIGHT).frame(egui::Frame::NONE).show(ui, |ui| self.status_bar(ui));
+        self.take_notices();
+        self.notice_list(&ctx);
+        if !taking {
+            self.command_palette(&ctx);
+        }
+        self.take_font(&ctx);
+        if self.settings_open {
+            settings::show(ui, self);
+        } else {
+            let r = ui.max_rect();
+            if self.help.open {
+                // Esc and the scrolling keys are the help's before the keymap reads them.
+                self.help.keys(&ctx);
+            }
+            self.read_keys(&ctx);
+            // No editor yet: the ghost stands where the document will be.
+            let look = ito_prefs::Look { c: ito_theme::colors(), q: "" };
+            let _ = ito_prefs::empty_state(ui, look, ito_prefs::Mark::Info, self.table.tr("app.hello"), self.table.tr("app.bug"), None);
+            if self.help.open {
+                help::show(ui, self, r);
+            }
+        }
+        self.script(&ctx);
+        // Last, so the edges of the frameless window win over what is under them.
+        if !cfg!(target_os = "macos") {
+            ito_titlebar::resize_edges(&ctx);
+        }
+    }
+
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        ito_theme::colors().bg.to_normalized_gamma_f32()
+    }
+
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if let Some(script) = &mut self.script {
+            if let Some(d) = script.input(ctx, raw) {
+                self.todo.push(d);
+            }
+        }
+    }
+
+    /// The window's last place, and, when the window closed from outside
+    /// while a script ran, the done file that says so (else the lane waits
+    /// out its timeout).
+    fn on_exit(&mut self) {
+        // Written now rather than on the tracker's clock.
+        if let Some(t) = &mut self.tracker {
+            t.close(None);
+        }
+        let Some(script) = &mut self.script else { return };
+        if !script.running() {
+            return;
+        }
+        let left = script.left();
+        script.finish();
+        let Some(done) = script.done.clone() else { return };
+        self.write_state(done, &ito_keyscript::closed_report(left));
+    }
+}
+
+/// The keys: the person's keymap.toml at `own` (none is fine) over the
+/// defaults. What the file got wrong comes back as the lines to show.
+fn load_keys(own: Option<&std::path::Path>) -> (keymap::Keys, Vec<String>) {
+    let mut notes = Vec::new();
+    let text = own.and_then(|p| match std::fs::read_to_string(p) {
+        Ok(t) => Some(t),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            notes.push(format!("{}: {e}", p.display()));
+            None
+        }
+    });
+    let path = own.map(|p| p.display().to_string()).unwrap_or_default();
+    let (keys, warnings) = keymap::Keys::load(text.as_deref().map(|t| (path.as_str(), t)));
+    notes.extend(warnings);
+    (keys, notes)
+}
+
+/// `--keys SCRIPT` as its steps; `None` when the arguments are not that.
+/// `-x` after `--keys` is the script's text, not an option.
+fn keys_arg(args: &[String]) -> Result<Option<Vec<Step>>, String> {
+    match args {
+        [k, ..] if k != "--keys" => Ok(None),
+        [_] => Err("--keys needs a script".to_owned()),
+        [_, s] => ito_keyscript::parse(s).map(Some).map_err(|e| format!("--keys: {e}")),
+        [_, _, more, ..] => Err(format!("unknown argument `{more}`")),
+        [] => Ok(None),
+    }
+}
+
+/// Reads the Japanese face on a thread of its own (it is tens of megabytes) and repaints when it is in.
+fn font_reader(ctx: &egui::Context) -> std::sync::mpsc::Receiver<Option<Vec<u8>>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let ctx = ctx.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(ito_common::fonts::read_first(ito_common::fonts::JAPANESE).map(|(_, b)| b));
+        ctx.request_repaint();
+    });
+    rx
+}
+
+/// Puts a line where whoever typed the command is looking, on standard error
+/// when `err`. A release build on Windows has no console of its own;
+/// `ito_console` writes to the console it was started from, or to the pipe
+/// `weft.com` hands on, and lets go of a write that fails.
+fn say(text: &str, err: bool) {
+    let line = format!("{text}\n");
+    match err {
+        true => ito_console::err(&line),
+        false => ito_console::out(&line),
+    }
+}
+
+fn main() -> eframe::Result {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let done = std::env::var_os("WEFT_KEYS_DONE").filter(|v| !v.is_empty()).map(PathBuf::from);
+    let script = match keys_arg(&args) {
+        Ok(s) => s,
+        Err(e) => {
+            // A run started detached never sees the message: the done file carries it (ito #193).
+            if let Some(done) = &done {
+                let _ = std::fs::write(done, ito_keyscript::refused_report(&e));
+            }
+            say(&format!("weft: {e}\n\n{USAGE}"), true);
+            std::process::exit(2);
+        }
+    };
+    if let (Some(_), Some(done)) = (&script, &done) {
+        ito_keyscript::install_panic_report(done.clone());
+    }
+    if let (Some(a), None) = (args.first(), &script) {
+        match a.as_str() {
+            "--version" | "-V" => say(&ito_bugreport::version_line("weft", env!("CARGO_PKG_VERSION")), false),
+            "--help" | "-h" => say(USAGE, false),
+            "env" | "--env" => say(envreport::text().trim_end_matches('\n'), false),
+            other => {
+                say(&format!("weft: unknown argument `{other}`\n\n{USAGE}"), true);
+                std::process::exit(2);
+            }
+        }
+        return Ok(());
+    }
+    // A script plays on a window that keeps no place, and leaves none.
+    let saved = if script.is_none() { Saved::load(ito_common::state_dir("weft")) } else { Saved::load(None) };
+    let viewport = egui::ViewportBuilder::default()
+        .with_title("weft")
+        .with_inner_size([1280.0, 800.0])
+        .with_min_inner_size([720.0, 420.0])
+        .with_icon(std::sync::Arc::new(egui::IconData { rgba: icon::pixels(ICON_PX), width: ICON_PX, height: ICON_PX }));
+    // The bar is the app's own (the Mac keeps its traffic lights over it).
+    let viewport = ito_titlebar::frameless(viewport);
+    let options = eframe::NativeOptions { viewport: saved.viewport(viewport), ..Default::default() };
+    eframe::run_native(
+        "weft",
+        options,
+        Box::new(move |cc| {
+            let script = script.map(|steps| {
+                let mut r = Runner::new(steps, done);
+                r.watch(cc.egui_ctx.clone());
+                r
+            });
+            Ok(Box::new(App::new(cc, &saved, script)))
+        }),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 1.8: `--keys` takes the script itself; anything after it is refused.
+    #[test]
+    fn the_keys_argument_is_a_script_and_anything_after_it_is_refused() {
+        let a = |v: &[&str]| keys_arg(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert!(matches!(a(&[]), Ok(None)));
+        assert!(matches!(a(&["--version"]), Ok(None)));
+        assert_eq!(a(&["--keys", "j<Enter><Shot:main>"]).unwrap().unwrap().len(), 3);
+        assert!(matches!(a(&["--keys", "-x"]), Ok(Some(_))));
+        assert_eq!(a(&["--keys"]).unwrap_err(), "--keys needs a script");
+        assert!(a(&["--keys", "<Nope>"]).unwrap_err().starts_with("--keys:"));
+        assert_eq!(a(&["--keys", "j", "--more"]).unwrap_err(), "unknown argument `--more`");
+    }
+
+    /// 4.2: The palette and the keymap name the same things: every action
+    /// the keymap may bind is in the palette with its key.
+    #[test]
+    fn every_keymap_action_is_in_the_palette() {
+        let app = App::for_tests();
+        let entries = app.commands();
+        for name in keymap::ACTIONS {
+            let key = app.keys.label(name);
+            assert!(!key.is_empty(), "{name} has no default key");
+            assert!(entries.iter().any(|e| e.key == key), "{name} ({key}) is not in the palette");
+        }
+    }
+}
