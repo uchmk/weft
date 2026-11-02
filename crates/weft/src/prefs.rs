@@ -28,9 +28,10 @@ pub enum Reload {
     /// keymap.toml's text (`None` when there is none), or why it could not
     /// be read.
     Keymap(Result<Option<String>, String>),
-    /// config.toml's `[notify]` with the `secret:` addresses read back, and
-    /// what to warn of; or why the file could not be read.
-    Config(Result<(NotifyCfg, Vec<String>), String>),
+    /// config.toml's `[notify]` with the `secret:` addresses read back, its
+    /// `[open]` and `[line_args]` (`$EDITOR`), and what to warn of; or why
+    /// the file could not be read. Boxed: far larger than the others.
+    Config(Result<Box<Config>, String>),
     Failed(String),
 }
 
@@ -39,18 +40,33 @@ pub fn config_path(base: &Path) -> PathBuf {
     ito_common::app_dir_in(base, "weft").join("config.toml")
 }
 
-/// The `[notify]` of the config.toml at `path` (none: the defaults) as the
-/// page shows it, the `secret:` addresses read back from the credential
-/// store. Blocks on the store: call it off the UI thread.
-fn read_config(path: &Path) -> Result<(NotifyCfg, Vec<String>), String> {
+/// What weft reads of its config.toml.
+pub struct Config {
+    pub notify: NotifyCfg,
+    pub open: ito_openin::Config,
+    pub warnings: Vec<String>,
+}
+
+/// The config.toml at `path` (none: the defaults): `[notify]` as the page
+/// shows it, the `secret:` addresses read back from the credential store,
+/// and `[open]` / `[line_args]`. Blocks on the store: call it off the UI
+/// thread.
+fn read_config(path: &Path) -> Result<Box<Config>, String> {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => Some(t),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
-    let (mut n, mut notes) = crate::notify::read(text.as_deref());
-    notes.extend(n.reveal("weft"));
-    Ok((n, notes))
+    let (mut notify, mut warnings) = crate::notify::read(text.as_deref());
+    warnings.extend(notify.reveal("weft"));
+    let (open, open_warn) = ito_openin::Config::read(text.as_deref());
+    // The file's own syntax error is said once, by the `[notify]` reading.
+    for w in open_warn {
+        if !warnings.contains(&w) {
+            warnings.push(w);
+        }
+    }
+    Ok(Box::new(Config { notify, open, warnings }))
 }
 
 /// One lock for every writer of config.toml from the window.
@@ -153,6 +169,8 @@ pub struct Prefs {
     /// `secret:` addresses read back), and what it warns of.
     pub notify: NotifyCfg,
     pub notify_warn: Vec<String>,
+    /// `[open]` and `[line_args]` of config.toml: the editor `file.open_in_editor` starts.
+    pub open: ito_openin::Config,
     /// The Notifications page's fields while they are typed in.
     pub notify_drafts: ito_prefs::Drafts,
     tx: Sender<Reload>,
@@ -185,6 +203,7 @@ impl Prefs {
             keys_edit: ito_prefs::KeysEdit::default(),
             notify: crate::notify::read(None).0,
             notify_warn: Vec::new(),
+            open: ito_openin::Config::default(),
             notify_drafts: ito_prefs::Drafts::new(),
             tx,
             rx,
@@ -279,7 +298,7 @@ impl Prefs {
                     self.keymap = t;
                     self.keymap_new = Some(None);
                 }
-                Reload::Config(Ok((n, w))) => (self.notify, self.notify_warn) = (n, w),
+                Reload::Config(Ok(c)) => (self.notify, self.open, self.notify_warn) = (c.notify, c.open, c.warnings),
                 // Unreadable (being written, say): the page keeps what it
                 // had, and says so.
                 Reload::Config(Err(e)) => self.notify_warn = vec![e],
@@ -541,8 +560,11 @@ mod tests {
         std::fs::write(&path, &with_comment).unwrap();
         write_config(&path, Some("notify"), &[("focus_mode", "false".into())], None).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), with_comment);
-        let (n, warn) = read_config(&path).unwrap();
-        assert!(warn.is_empty() && !n.focus_mode(), "{warn:?}");
+        let c = read_config(&path).unwrap();
+        assert!(c.warnings.is_empty() && !c.notify.focus_mode(), "{:?}", c.warnings);
+        std::fs::write(&path, format!("{with_comment}[open]\neditor = \"hx {{path}}\"\n")).unwrap();
+        let c = read_config(&path).unwrap();
+        assert_eq!(c.open.open.editor, "hx {path}", "{:?}", c.warnings);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

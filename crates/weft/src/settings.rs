@@ -20,7 +20,7 @@ pub const ADVANCED: usize = 4;
 pub const ABOUT: usize = 5;
 
 /// The keymap's layers and the words that name them on the Keys page.
-const LAYERS: [(&str, &str); 1] = [("app", "keys.main")];
+const LAYERS: [(&str, &str); 2] = [("app", "keys.main"), ("edit", "keys.edit")];
 
 /// What common.toml means when it names no theme: ito's default (`dark`,
 /// tsumugi Dark and tsumugi Light, as the common spec says). weft has no
@@ -149,7 +149,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                 layer_name: &layer_name,
                 tr: &desc,
                 extra: &extra,
-                unbound: &[],
+                unbound: crate::keymap::unbound(),
                 sup: false,
             };
             key_edits.extend(ito_prefs::keys_page(ui, l, kw, &table, keys_edit).unwrap_or_default());
@@ -201,7 +201,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
         match a {
             ito_prefs::Advanced::OpenConfigDir => match app.prefs.base.clone() {
                 Some(b) => app.prefs.open_dir(b),
-                None => app.scale_note = Some(no_folder.clone()),
+                None => app.note = Some(no_folder.clone()),
             },
             ito_prefs::Advanced::OpenStateDir => {
                 if let Some(d) = state_dir.clone() {

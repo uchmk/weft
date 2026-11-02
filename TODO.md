@@ -13,14 +13,14 @@
 - [x] `keymap.toml` と設定の「キー」ページ: `ito-keymap`・`ito-prefs` の `keys_page`。既定のキーは `defaults/keymap.toml`
   （`<C-,>` 設定・`<F1>` ヘルプ・`<C-q>` 終了）。keymap.toml には変えた分だけを書く。読めない行はベルに出す。
 - [x] F1 のヘルプ: `ito-help`。`?` は文字の入力に使うので割り当てない（設計の原則）。
-- [ ] 通知と設定の「通知」ページ: ページ（`notify_page`、試しの通知）は配線済み。`notify::tell`（保存できなかった知らせ）は、保存ができるまで呼ぶ所がない。
+- [x] 通知と設定の「通知」ページ: ページ（`notify_page`、試しの通知）と、保存できなかったときの `notify::tell`（`take_files`）。
 - [x] 設定の画面: `ito_prefs::show`（一般・テーマ・キー・通知・詳細・情報）。`Ctrl+,` で開き、`Esc` で閉じる。
 - [x] 窓の場所を戻す: `window::Saved` で戻し、`Tracker::follow` で書き、`on_exit` で `Tracker::close`。
 - [ ] 通知を入れる: 設定・keymap.toml・テーマ・言語の読めなかったことはベルに `Kind::Warn` で入れる（`go` は `()`）。
   `ito-notify` の `Toast::open` のトーストは、飛び先（開いているファイル）ができてから。
-- [x] コマンドパレットの中身: 不具合の報告・拡大率を戻す・設定・キーのヘルプ・終了。キーは `ito-keymap` から引く。編集のコマンドはフェーズ 1 で足す。
+- [x] コマンドパレットの中身: 不具合の報告・拡大率を戻す・設定・キーのヘルプ・終了と、`commands::ALL` のうち `palette` のもの（保存・外部エディター・元に戻す・構造のコマンド）。キーは `ito-keymap` から引く。
 - [x] 字体: `ito-fonts` で日本語の字体を別スレッドで読み、`egui` に足す。
-- [x] `TESTING.md` に確認の行（起動・キーのヘルプ・設定・パレット・通知・拡大率・台本）を足し、`cargo run --example make-testcheck` で `TESTING-CHECKS.md` を作った。
+- [x] `TESTING.md` に確認の行（起動・キーのヘルプ・設定・パレット・通知・拡大率・台本・編集・外部エディター）を足し、`cargo run --example make-testcheck` で `TESTING-CHECKS.md` を作った。
 - [x] `icon.rs` に本当のアイコン（織り目。縦糸と横糸が交互に上下する）。`.exe` のアイコンも同じ絵から `build.rs` で作る。
 - [x] リリースの workflow: `scripts/lanes.sh sync` が ito の雛形から書く（`lanes.conf` の `workflows=`）。
 
@@ -31,32 +31,40 @@
 
 ### 着手前（設計の「進め方」の (3)・(4)）
 - [x] 編集バッファ（rope など）と元に戻すを、ito・kura が既に持っていないか調べる → どちらにも無い（kura の `UndoStep` はファイル操作の元に戻す）。
-- [ ] 編集バッファ・位置・選択・トランザクションの元に戻すを ito に頼んだ（uchmk/ito#156）。`ito-textbuf` として ito の 0126b34（v0.222.0）に入った。
-  weft は既にこの rev。フェーズ 1 で `ito-textbuf` を使い、weft に先に独自の型を作らない。
-- [ ] コマンドエンジンの設計: 「対象.動作」の名前、ito-keymap の割り当て、ito-palette の一覧、ツールバーを 1 つの元から出す。コマンドの列を 1 つの名前にまとめる所まで（スクリプト言語は持たない）。
+- [x] 編集バッファ・位置・選択・トランザクションの元に戻すを ito に頼んだ（uchmk/ito#156）。`ito-textbuf` として ito の 0126b34（v0.222.0）に入り、フェーズ 1 で使っている（`src/engine.rs` は `ito-textbuf` の上の薄い層）。
+- [x] コマンドエンジンの設計: 「対象.動作」の名前を `src/commands.rs` の `ALL` 1 か所に置き、キーマップ・パレット・ヘルプがそこから引く。文書のコマンドは `commands::edit`（UI を持たない）。
+  ツールバーはまだない（作るときも `ALL` から出す）。
 
 ### フェーズ 1 編集エンジン（Document Engine）
-- [ ] バッファ・カーソル・選択（文字境界、書記素クラスタ）。
-- [ ] 位置モジュール（バイト範囲 ⇔ 文字境界の変換を 1 か所に）。CRLF・全角・絵文字のテスト。
-- [ ] 元に戻す・やり直す（1 操作 = 1 トランザクション。ファイルへの作用の逆操作も持てる形）。
-- [ ] 構造木（pulldown-cmark の `into_offset_iter`、kura の `src/preview/markdown.rs` と同じ options）。ワーカーで版番号つきに作る。
-- [ ] `ito-mdedit` の `Change` をトランザクションとして適用する所。
-- [ ] 名前つきコマンドとキーマップ（`ito-keys`・`ito-keymap`）、パレット。
-- [ ] 色づけ（`ito-syntax`）をワーカーで。追いつくまでは前の色のまま文字だけ出す。
-- [ ] 改行コード・BOM を読んだまま保存（一時ファイル → 置き換え）。UTF-8 以外は警告して読み取り専用か変換。
-- [ ] 1 キーで `$EDITOR` へ（`ito-openin`、行・列を渡す。kura の `[line_args]` に揃える）。
+- [x] バッファ・カーソル・選択（文字境界、書記素クラスタ）: `ito-textbuf` の `Doc`・`Selection`。`src/engine.rs` の `Editor` が束ねる。
+- [x] 位置モジュール: `ito_textbuf::pos` の 1 か所だけで変換する。CRLF・全角・絵文字のテストは `engine.rs`。
+- [x] 元に戻す・やり直す（1 操作 = 1 トランザクション）: `ito-textbuf` の履歴。打った文字は続けて 1 歩、コマンドの前後で区切る。
+  ファイルへの作用の逆操作は、それを使う画像の貼り付け（フェーズ 4）で入れる。
+- [x] 構造木: `src/structure.rs` が pulldown-cmark の `into_offset_iter` を `ito_outline::options()` で読む。ワーカーで版番号つきに作り、古い版は捨てる。
+- [x] `ito-mdedit` の `Change` をトランザクションとして適用する所（`Editor::structure`、1 回で 1 歩、カーソルは `Change` の示す所へ）。
+- [x] 名前つきコマンドとキーマップ（`ito-keys`・`ito-keymap`、`defaults/keymap.toml` の `app`・`edit` の層）、パレット。
+- [x] 色づけ: 見出し・強調・コード・リストの記号は構造木と同じワーカーで、` ``` ` の中は `ito-syntax` の `Stream::for_fence`。追いつくまでは前の色のまま文字だけ出す。
+- [x] 改行コード・BOM を読んだまま保存（一時ファイル → 置き換え。ファイルのスレッドで書く）。UTF-8 以外は警告して読み取り専用で開く（変換はしない）。
+- [x] 1 キーで `$EDITOR` へ（`Ctrl+E`、`ito_openin::Config::open_file_at` に行・列。未保存なら先に保存）。列は uchmk/ito#158 で ito に入った（745ccb1）。
+- [x] 未保存の変更があるときの終了は `ito-confirm` で聞く（やめる・保存せずに終了・保存して終了）。保存が済んでから閉じる。
+- [ ] ito に頼んだもの（入れば weft の回り道を外す）:
+  - uchmk/ito#159 `ito-textbuf`: 行の索引（今の `pos` の行の関数は O(n)）、元に戻すで保存した所に戻ったら未保存でなくなる印、続けて消した文字を 1 歩にまとめる。
+  - uchmk/ito#160 `ito-mdedit`: リストの項目 1 つだけを上下に動かす（今の `move_block` はリスト全体を動かす）。
+  - uchmk/ito#161 `ito-outline`: `at_byte` が本文の末尾のカーソルを取りこぼす（weft は 1 バイト前で聞いて回避）。
 
 ### フェーズ 2 日本語特化
 - [ ] `ito-ime` の統合。確定の前後でカーソルと選択を保つ。
+  変換中の文字をカーソルの所に出す・確定を入れる・候補の窓をカーソルに寄せる・変換中のキーをキーマップに渡さない、までは `src/view.rs` で配線済み。
 - [ ] 入力の優先順位（IME → 補完 → キーマップ → コマンド）。変換中は補完を開かない、確定の Enter をコマンドにしない。
 - [ ] 全角スペースと意図しないハード改行を控えめにハイライト。
 - [ ] 状態欄: 行・列、日本語の文字数、選択の文字数、保存状態、文字コード、改行コード、IME の状態（`ito-statusbar`）。
 
 ### フェーズ 3 Markdown 操作（`ito-mdedit` を配線する）
-- [ ] `block.move_up` / `block.move_down`（`move_block`）、節の移動（`move_section`）。
-- [ ] `section.promote` / `section.demote`（`promote_section` / `demote_section`。子孫の見出しごと）。
-- [ ] リストの階層（`indent_item` / `outdent_item`）、`list.toggle_task`（`toggle_task`）、番号の振り直し（`renumber`）。
+- [x] `block.move_up` / `block.move_down`（`move_block`、`Alt+↑` / `Alt+↓`）、節の移動（`move_section`、`Alt+Shift+↑` / `Alt+Shift+↓`）。リストの項目 1 つは uchmk/ito#160 待ち。
+- [x] `section.promote` / `section.demote`（`promote_section` / `demote_section`。子孫の見出しごと。`Alt+Shift+←` / `Alt+Shift+→`）。
+- [x] リストの階層（`indent_item` / `outdent_item`、`Alt+→` / `Alt+←`）、`list.toggle_task`（`toggle_task`、`Ctrl+Enter`）、番号の振り直し（`renumber`、パレットから）。
 - [ ] `table.format`（`format_table`。全角は 2 セル幅）、`table.next_cell`（`next_cell`、Tab / Shift+Tab）。
+  コマンドとパレットには入れた。Tab / Shift+Tab は表の中だけで効くように割り当てる所が残っている（表の外の Tab をどうするかと一緒に決める）。
 - [ ] 見出しの折りたたみ（`heading.fold`）、目次の挿入・更新（`heading.insert_toc`）。
 - [ ] 構造選択（単語 → 段落 → リスト → 節 → 親の節）、構造を壊さない削除、構造ナビゲーション、構造診断（lint）、集中表示。
   `ito-mdedit` に無いので、要る形が決まったら ito に頼む（アプリに書かない）。

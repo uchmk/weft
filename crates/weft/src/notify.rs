@@ -43,8 +43,6 @@ fn icon(side: u32) -> Vec<u8> {
 /// Tell of a save that failed in every way `n` turns on for it. A click on
 /// the system's notification (or its `open` button) brings the window
 /// forward; a newer failure's replaces the last.
-// Saving comes with the Document Engine (TODO.md, phase 1).
-#[allow(dead_code)]
 pub fn tell(n: &NotifyCfg, title: &str, body: &str, open: &str) {
     n.tell_open(&EVENTS, APP, icon, "save_failed", title, body, "save_failed", open);
 }

@@ -25,10 +25,10 @@ mod tests {
     fn the_tables_read() {
         let (en, errs) = table("en");
         assert!(errs.is_empty(), "{errs:?}");
-        assert_eq!(en.tr("app.hello"), "Hello from weft.");
+        assert_eq!(en.tr("empty.title"), "No file is open");
         let (ja, errs) = table("ja");
         assert!(errs.is_empty(), "{errs:?}");
-        assert_eq!(ja.tr("app.hello"), "weft です。");
+        assert_eq!(ja.tr("empty.title"), "ファイルが開かれていません");
         assert_eq!(ja.tr("app.title"), "weft");
     }
 }

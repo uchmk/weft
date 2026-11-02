@@ -12,16 +12,16 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 | 1.2 | Move and resize the window, close it and start it again | The window comes back at the same place and size |
 | 1.3 | Press `F12` | The browser opens the repository's new issue form with the version and OS filled in |
 | 1.4 | Look at the title bar | There is no system title bar; at the left the woven icon (three teal threads across, three grey threads up and down, going over and under) and "weft"; the palette field, the bell and the minimize, maximize and close buttons at the right |
-| 1.5 | Look at the window before anything is open | An empty-state ghost in the middle ("Hello from weft." over "Report a problem (F12)"), with no button under it |
+| 1.5 | Run `weft` with no file | An empty-state ghost in the middle ("No file is open" over "Start weft with a Markdown file: weft FILE.md"), with no button under it |
 | 1.6 | Look at `weft.exe` in Explorer and on the taskbar | The same woven icon as in the title bar |
-| 1.7 | Press `Ctrl+Q` | The window closes; started again, it comes back at the place it closed at |
+| 1.7 | Press `Ctrl+Q` with nothing unsaved | The window closes; started again, it comes back at the place it closed at |
 | 1.8 | Run `weft --keys`, then `weft --keys "<F1>" --more` | weft says `--keys needs a script`, then ``unknown argument `--more` ``, and does not start |
 
 ## 2. Key help
 
 | # | Do | Expect |
 |---|---|---|
-| 2.1 | Press `F1` | A card over the dimmed window lists the keys in groups: "Everywhere" (settings, key help, quit), "Always" (F12, the palette, the scale) and "This list" |
+| 2.1 | Press `F1` | A card over the dimmed window lists the keys in groups: "Everywhere" (settings, key help, quit, save, the external editor, undo and redo), "Editing" (the caret, the selection, typing and the structure commands), "Always" (F12, the palette, the scale) and "This list" |
 | 2.2 | Press `↓`, `PgDn`, `End`, `Home`, and turn the wheel over the card (in a window small enough that the list scrolls) | The list scrolls a line, a page, to the end and back to the top; the wheel scrolls by lines |
 | 2.3 | Press `Esc`; open the help again and press `F1`; open it again and click outside the card | Each time the help closes |
 | 2.4 | Type `?` | Nothing opens: `?` is left for the text, only `F1` opens the help |
@@ -44,8 +44,8 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 
 | # | Do | Expect |
 |---|---|---|
-| 4.1 | Press `Ctrl+Shift+P`, or click the palette field in the title bar | The palette lists Report a problem, Reset the scale, Settings, Key help and Quit |
-| 4.2 | Look at the right of each row in 4.1 | Every command the keymap binds shows its key (`Ctrl+,`, `F1`, `Ctrl+Q`) |
+| 4.1 | Press `Ctrl+Shift+P`, or click the palette field in the title bar | The palette lists Report a problem, Reset the scale, Settings, Key help, Quit, Save, the external editor, Undo, Redo, Select all and the block, section, list and table commands; not the caret's moves |
+| 4.2 | Look at the right of each row in 4.1 | Every command the keymap binds shows its key (`Ctrl+,`, `F1`, `Ctrl+Q`, `Ctrl+S`, `Alt+↑`); Renumber the list, Format the table and the cell moves have none |
 | 4.3 | Type `set` and press `Enter` | The settings open |
 | 4.4 | Press `Esc` with the palette open | The palette closes and nothing runs |
 
@@ -71,3 +71,24 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 |---|---|---|
 | 7.1 | Run `weft --keys <script>` with `WEFT_KEYS_DONE` set to a file, the script `<F1><Shot:help><Esc><C-,><State:settings><Quit>` | The window runs the keys without a hand on them; the file says `keys: done`, the state `settings` says `screen: settings` and `page: 0`, and a picture of the help is saved |
 | 7.2 | Run a script with `<Lang:en>` before `<F1>` | The help in the picture is in English, and common.toml's language is left as it was |
+
+## 8. Editing
+
+| # | Do | Expect |
+|---|---|---|
+| 8.1 | Run `weft FILE.md` on a file with CRLF line ends and a BOM; move with `←` `→` over `é`, `漢字` and `👍🏽` | The caret steps over a whole character each time (the emoji with its skin tone is one); the status bar says the line and column, `CRLF` and `BOM` |
+| 8.2 | Type a word, press `Enter`, type another; press `Ctrl+Z` three times, then `Ctrl+Y` | The status bar says "Unsaved"; each `Ctrl+Z` takes back one step (the second word, the line break, the first word) and `Ctrl+Y` puts the first word back |
+| 8.3 | In a file with headings, a list and a paragraph: `Alt+↓` on the paragraph, `Ctrl+Enter` on a list item, `Alt+Shift+→` on a heading | The paragraph moves under the next block; the item gets `[ ]`; the heading and the headings under it go one level down. One `Ctrl+Z` puts each back whole |
+| 8.4 | Press `Ctrl+S`, then look at the file in a hex viewer | "Unsaved" goes and the status bar says it saved; the file still starts with the BOM and every line ends in CRLF |
+| 8.5 | Open a Shift_JIS file | The bell says it is not UTF-8 and opened read-only; the status bar says "Read-only"; typing changes nothing and `Ctrl+S` writes nothing |
+| 8.6 | With changes not saved, press `Ctrl+Q` (or the close button); press `Esc`; press `Ctrl+Q` again and `N`; then, with changes again, `Ctrl+Q` and `Enter` | A question "Unsaved changes" with Cancel (Esc), Quit without saving (N) and Save and quit (Enter); `Esc` keeps the window, `N` closes it without writing, `Enter` writes the file and then closes |
+| 8.7 | Open a file with headings, `**bold**`, `` `code` ``, a task list and a ` ```rust ` fence; type quickly in a long file | Headings, emphasis, code, the list markers and the Rust code have their colours; typing never waits for them (the old colours stay until the new reading comes) |
+| 8.8 | Type Japanese with the IME on, then press `Enter` to commit | The text being composed shows at the caret, the candidate window sits by the caret; the `Enter` commits and does not break the line |
+
+## 9. The external editor and key scripts
+
+| # | Do | Expect |
+|---|---|---|
+| 9.1 | Put the caret on line 3, column 5 and press `Ctrl+E` (with changes not saved) | The file is saved first, then the editor `[open]` names opens it at line 3, column 5 (at the line only, for an editor that takes no column) |
+| 9.2 | Press `Ctrl+E` with an editor that does not exist in `[open]` | The bell says the external editor could not be opened |
+| 9.3 | Run `weft FILE.md --keys "<C-End>x<State:typed><Quit>"` with `WEFT_KEYS_DONE` set | The state `typed` says `file`, `dirty: true`, `locked: false`, `caret` (line:column), `section` (the heading the caret is under), `lines`, `text` and `quit: no` |

@@ -5,10 +5,16 @@
 //! the settings screen that writes them, Ctrl+,), `--version` / `--help`,
 //! F12 (the bug report), `--keys` (a script that drives the window for a
 //! test lane), keymap.toml (Ctrl+Q quits) and the key help (F1).
-//! The editor itself is still to come: see TODO.md and docs/design.md.
+//!
+//! The document: `weft FILE` opens it in the Document Engine
+//! ([`engine`], ito-textbuf), [`view`] draws it with the colours the
+//! [`structure`] worker last read, and the keys run the named commands of
+//! [`commands`]. Saving and `$EDITOR` run on a thread of their own, in order.
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod commands;
+mod engine;
 mod envreport;
 mod help;
 mod i18n;
@@ -17,8 +23,11 @@ mod keymap;
 mod notify;
 mod prefs;
 mod settings;
+mod structure;
+mod view;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Receiver, Sender};
 
 use ito_common::window::{Saved, Tracker};
 use ito_keymap::Match;
@@ -33,8 +42,11 @@ const REPO: &str = "https://github.com/uchmk/weft";
 const USAGE: &str = "\
 weft — Markdown 専用エディター。キーだけで見出し・リスト・表などの構造を組み替え、日本語 IME に強く、フォルダー（vault）も扱う。kura の .md の opener
 
-usage: weft [--version | --help | env | --keys SCRIPT]
+usage: weft [FILE] [--keys SCRIPT]
+       weft --version | --help | env
 
+  FILE           the Markdown file to edit (one that is not there yet is
+                 made when it is saved)
   env            print what a bug report needs (version, files, last run); no window
   --keys SCRIPT  press these keys once the window is up, as kura's --keys;
                  WEFT_KEYS_DONE names the file that says how it ended
@@ -55,6 +67,62 @@ fn type_scale(style: &mut egui::Style) {
     style.spacing.button_padding = egui::vec2(10.0, 3.0);
 }
 
+/// What the file thread does, in the order it was asked.
+enum FileJob {
+    Save(engine::SaveJob),
+    /// `$EDITOR` at the caret. After a save that failed, it is not run: the
+    /// editor would open what is on the disk, not what the window shows.
+    Open {
+        // Boxed: far larger than a save job on some targets.
+        cfg: Box<ito_openin::Config>,
+        path: PathBuf,
+        at: ito_openin::Pos,
+    },
+}
+
+/// What came back from the file thread.
+enum FileDone {
+    Saved { version: u64, path: PathBuf, result: Result<(), String> },
+    OpenFailed(String),
+}
+
+/// The thread that writes the files and starts `$EDITOR`, off the UI thread
+/// and one job at a time (a save is on the disk before the editor reads it).
+fn file_thread(ctx: egui::Context) -> (Sender<FileJob>, Receiver<FileDone>) {
+    let (tx, jobs) = std::sync::mpsc::channel::<FileJob>();
+    let (done, rx) = std::sync::mpsc::channel();
+    let run = move || {
+        let mut failed = false;
+        while let Ok(job) = jobs.recv() {
+            let out = match job {
+                FileJob::Save(job) => {
+                    let result = engine::write(&job);
+                    failed = result.is_err();
+                    FileDone::Saved { version: job.version, path: job.path, result }
+                }
+                FileJob::Open { cfg, path, at } => {
+                    // The failed save was told of already.
+                    if std::mem::take(&mut failed) {
+                        continue;
+                    }
+                    match cfg.open_file_at(&path, Some(at)) {
+                        Ok(_) => continue,
+                        Err(e) => FileDone::OpenFailed(e),
+                    }
+                }
+            };
+            if done.send(out).is_err() {
+                return;
+            }
+            ctx.request_repaint();
+        }
+    };
+    if let Err(e) = std::thread::Builder::new().name("weft-files".into()).spawn(run) {
+        eprintln!("weft: no file thread: {e}");
+    }
+    (tx, rx)
+}
+
 struct App {
     table: ito_i18n::Table,
     /// common.toml, the themes, keymap.toml and config.toml's `[notify]`,
@@ -65,8 +133,20 @@ struct App {
     help: help::Help,
     tracker: Option<Tracker>,
     lang: String,
-    /// The last scale change, as the line the status bar shows.
-    scale_note: Option<String>,
+    /// The last thing done that the status bar tells of (a save, a scale change).
+    note: Option<String>,
+    /// The document, when one is open (`weft FILE`).
+    editor: Option<engine::Editor>,
+    view: view::View,
+    /// The newest reading of the structure, and the thread that reads it.
+    tree: Option<structure::Tree>,
+    worker: structure::Worker,
+    /// The file thread's way in and out, and how many saves are on it.
+    files: Sender<FileJob>,
+    done: Receiver<FileDone>,
+    saving: usize,
+    /// When the window opened: typing's clock (keys close together are one undo step).
+    started: std::time::Instant,
     /// What the bell lists, oldest first. `()` is where a click goes: weft
     /// has no place to jump to yet (a file and a line, once it edits).
     notices: Vec<ito_notices::Notice<()>>,
@@ -87,21 +167,31 @@ struct App {
     keys: keymap::Keys,
     key_pending: Vec<Key>,
     key_notes: Vec<String>,
+    /// Quitting, once asked to (`None` while nobody has).
+    quit: Option<Quit>,
 }
 
-/// What the palette can do. Add a variant and an entry in `commands` for each
-/// command the app gets.
+/// Where quitting is. With changes not saved, the window asks first (save
+/// and quit, quit without saving, or stay); a save asked for there closes the
+/// window once it lands, and one that fails leaves it open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Quit {
+    Asking,
+    Saving,
+    Go,
+}
+
+/// What the palette can do: the two fixed keys' commands, and every command
+/// of [`commands::palette`] by name (as a key runs it).
 #[derive(Clone, Copy)]
 enum Command {
     ReportBug,
     ResetScale,
-    Settings,
-    Help,
-    Quit,
+    Run(&'static str),
 }
 
 impl App {
-    fn new(cc: &eframe::CreationContext<'_>, saved: &Saved, script: Option<Runner>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, saved: &Saved, script: Option<Runner>, file: Option<PathBuf>) -> Self {
         saved.put(cc);
         // What this run drew with, for the bug report and `weft env`.
         let mut used = ito_common::runinfo::RunInfo::new(env!("CARGO_PKG_VERSION"));
@@ -133,14 +223,24 @@ impl App {
         // The scale is common.toml's, so egui's own Ctrl+= / Ctrl+- stay out of it.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         cc.egui_ctx.set_zoom_factor(prefs.common.scale_or_one());
-        Self {
+        let wake = cc.egui_ctx.clone();
+        let (files, done) = file_thread(cc.egui_ctx.clone());
+        let mut app = Self {
             table,
             prefs,
             settings_open: false,
             help: help::Help::default(),
             tracker: saved.tracker(),
             lang,
-            scale_note: None,
+            note: None,
+            editor: None,
+            view: view::View::default(),
+            tree: None,
+            worker: structure::Worker::new(move || wake.request_repaint()),
+            files,
+            done,
+            saving: 0,
+            started: std::time::Instant::now(),
             notices: Vec::new(),
             next_notice: 0,
             bell_open: false,
@@ -152,6 +252,33 @@ impl App {
             keys,
             key_pending: Vec::new(),
             key_notes,
+            quit: None,
+        };
+        if let Some(path) = file {
+            app.open(&path);
+        }
+        app
+    }
+
+    /// Open `path` as the document. One that cannot be read leaves the
+    /// window empty, and one that is not UTF-8 opens read-only; both are told
+    /// of under the bell.
+    fn open(&mut self, path: &Path) {
+        let name = path.display().to_string();
+        match engine::Editor::open(path) {
+            Ok(ed) => {
+                if ed.locked().is_some() {
+                    let title = self.table.trf("file.locked", &[&name]);
+                    self.notice(ito_notices::Kind::Warn, title);
+                }
+                self.editor = Some(ed);
+                self.tree = None;
+                self.view = view::View::default();
+            }
+            Err(e) => {
+                let title = self.table.trf("file.open_failed", &[&name, &e]);
+                self.notice(ito_notices::Kind::Err, title);
+            }
         }
     }
 
@@ -160,6 +287,7 @@ impl App {
     fn for_tests() -> Self {
         let (table, _) = i18n::table("en");
         let (keys, _) = keymap::Keys::load(None);
+        let (files, done) = file_thread(egui::Context::default());
         Self {
             table,
             prefs: prefs::Prefs::empty(),
@@ -167,7 +295,15 @@ impl App {
             help: help::Help::default(),
             tracker: None,
             lang: "en".to_owned(),
-            scale_note: None,
+            note: None,
+            editor: None,
+            view: view::View::default(),
+            tree: None,
+            worker: structure::Worker::new(|| {}),
+            files,
+            done,
+            saving: 0,
+            started: std::time::Instant::now(),
             notices: Vec::new(),
             next_notice: 0,
             bell_open: false,
@@ -179,17 +315,146 @@ impl App {
             keys,
             key_pending: Vec::new(),
             key_notes: Vec::new(),
+            quit: None,
         }
+    }
+
+    /// The document has the keys: one is open and nothing covers it (the
+    /// settings, the help, the palette, the list under the bell, the
+    /// question before quitting).
+    fn editing(&self) -> bool {
+        self.editor.is_some() && !self.settings_open && !self.help.open && self.palette.is_none() && !self.bell_open && self.quit.is_none()
+    }
+
+    /// The document has changes not yet saved.
+    fn dirty(&self) -> bool {
+        self.editor.as_ref().is_some_and(engine::Editor::is_dirty)
+    }
+
+    /// Ctrl+Q or the window's close: straight away when nothing would be
+    /// lost, else the question first.
+    fn quit(&mut self, ctx: &egui::Context) {
+        if self.quit == Some(Quit::Go) {
+            return;
+        }
+        if self.dirty() {
+            self.help.close();
+            self.palette = None;
+            self.bell_open = false;
+            self.quit = Some(Quit::Asking);
+        } else {
+            self.quit = Some(Quit::Go);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    /// The question's answer: 0 stay, 1 quit without saving, 2 save and quit.
+    fn answer_quit(&mut self, ctx: &egui::Context, pick: usize) {
+        match pick {
+            0 => self.quit = None,
+            1 => {
+                self.quit = Some(Quit::Go);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            _ => {
+                self.quit = Some(Quit::Saving);
+                self.save();
+            }
+        }
+    }
+
+    /// The question's keys, read before anything else sees them: Esc stays,
+    /// `n` quits without saving, Enter (or `y`) saves and quits.
+    fn quit_keys(&mut self, ctx: &egui::Context) {
+        use egui::{Key as K, Modifiers as M};
+        let pick = ctx.input_mut(|i| {
+            if i.consume_key(M::NONE, K::Escape) {
+                Some(0)
+            } else if i.consume_key(M::NONE, K::N) {
+                Some(1)
+            } else if i.consume_key(M::NONE, K::Enter) || i.consume_key(M::NONE, K::Y) {
+                Some(2)
+            } else {
+                None
+            }
+        });
+        if let Some(p) = pick {
+            self.answer_quit(ctx, p);
+        }
+    }
+
+    /// A save asked for by the question has landed: the window closes, or
+    /// stays when the document is still not saved (the failure is under the
+    /// bell; a document with no file is told of there too).
+    fn quit_after_save(&mut self, ctx: &egui::Context) {
+        if self.quit != Some(Quit::Saving) || self.saving > 0 {
+            return;
+        }
+        if self.dirty() {
+            self.quit = None;
+        } else {
+            self.quit = Some(Quit::Go);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    /// The question before quitting, over everything; a click is its key.
+    fn quit_question(&mut self, ctx: &egui::Context) {
+        if self.quit != Some(Quit::Asking) {
+            return;
+        }
+        let name = self
+            .editor
+            .as_ref()
+            .and_then(engine::Editor::path)
+            .and_then(Path::file_name)
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let c = ito_theme::colors();
+        let style = ito_confirm::Style {
+            panel: c.panel,
+            border: c.border,
+            accent: Some(c.wait),
+            title: c.fg,
+            text: c.fg,
+            dim: c.dim,
+            warn: c.wait,
+            button_bg: c.border,
+            button_text: c.fg,
+        };
+        let body = [self.table.trf("quit.body", &[&name])];
+        // ito-confirm sits the last button at the right: the way on, Enter's.
+        let buttons = [
+            format!("{}  Esc", self.table.tr("quit.cancel")),
+            format!("{}  N", self.table.tr("quit.discard")),
+            format!("{}  Enter", self.table.tr("quit.save")),
+        ];
+        let q = ito_confirm::Question {
+            title: self.table.tr("quit.title"),
+            body: &body,
+            buttons: &buttons,
+            primary: Some(2),
+            ..Default::default()
+        };
+        if let Some(i) = ito_confirm::show(ctx, &q, &style) {
+            self.answer_quit(ctx, i);
+        }
+    }
+
+    /// Typing's clock, in milliseconds since the window opened.
+    fn now_ms(&self) -> u64 {
+        self.started.elapsed().as_millis() as u64
     }
 
     /// The keys of the frame that the keymap may run: after the fixed ones
     /// (F12, the palette, the scale) took theirs, and not while the palette
-    /// is open. A bare character goes to the widget that has the focus.
+    /// is open. A bare character goes to the widget that has the focus, or
+    /// to the document while it has the keys.
     fn read_keys(&mut self, ctx: &egui::Context) {
-        if self.palette.is_some() {
+        if self.palette.is_some() || self.quit.is_some() {
             return;
         }
-        let typing = ctx.memory(|m| m.focused().is_some());
+        let typing = ctx.memory(|m| m.focused().is_some()) || self.editing();
         let events = ctx.input(|i| i.events.clone());
         for e in events {
             let k = match e {
@@ -207,7 +472,7 @@ impl App {
     /// what led nowhere (and try the key alone).
     fn press(&mut self, ctx: &egui::Context, k: Key) {
         self.key_pending.push(k);
-        let run = match self.keys.resolve(&self.key_pending) {
+        let run = match self.keys.resolve(&self.key_pending, self.editing()) {
             Match::Exact(b) => b.run.clone(),
             Match::Pending(_) => return,
             Match::None => {
@@ -225,13 +490,120 @@ impl App {
         }
     }
 
-    /// What a bound key does.
+    /// What a bound key (or the palette) runs. The document's commands run
+    /// only while it has the keys.
     fn run_key(&mut self, ctx: &egui::Context, c: keymap::Cmd) {
-        match c {
-            keymap::Cmd::Run("quit") => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
-            keymap::Cmd::Run("settings") => self.open_settings(),
-            keymap::Cmd::Run("help") => self.help.toggle(),
-            keymap::Cmd::Run(_) | keymap::Cmd::None => {}
+        let keymap::Cmd::Run(name) = c else { return };
+        match name {
+            "quit" => self.quit(ctx),
+            "settings" => self.open_settings(),
+            "help" => self.help.toggle(),
+            "file.save" => self.save(),
+            "file.open_in_editor" => self.open_in_editor(),
+            _ if self.editing() => {
+                let (now, page) = (self.now_ms(), self.view.page());
+                if let Some(ed) = &mut self.editor {
+                    if commands::edit(ed, name, now, page).is_some() {
+                        self.view.follow = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// A job for the file thread; `false` when the thread is gone (told of).
+    fn send_file(&mut self, job: FileJob) -> bool {
+        if self.files.send(job).is_ok() {
+            return true;
+        }
+        let title = self.table.tr("file.no_thread").to_owned();
+        self.notice(ito_notices::Kind::Err, title);
+        false
+    }
+
+    /// Ctrl+S: what the document is now goes to the file thread.
+    fn save(&mut self) {
+        let Some(ed) = &self.editor else { return };
+        let name = ed.path().map(|p| p.display().to_string()).unwrap_or_default();
+        match ed.save_job() {
+            Ok(job) => {
+                if self.send_file(FileJob::Save(job)) {
+                    self.saving += 1;
+                }
+            }
+            Err(engine::NoSave::NoPath) => {
+                let title = self.table.tr("file.no_path").to_owned();
+                self.notice(ito_notices::Kind::Warn, title);
+            }
+            Err(engine::NoSave::Locked(_)) => {
+                let title = self.table.trf("file.locked", &[&name]);
+                self.notice(ito_notices::Kind::Warn, title);
+            }
+        }
+    }
+
+    /// Ctrl+E: `$EDITOR` at the caret's line and column, after a save when
+    /// the window has changes (docs/design.md).
+    fn open_in_editor(&mut self) {
+        let Some(ed) = &self.editor else { return };
+        let Some(path) = ed.path().map(Path::to_path_buf) else {
+            let title = self.table.tr("file.no_path").to_owned();
+            self.notice(ito_notices::Kind::Warn, title);
+            return;
+        };
+        let at = ed.editor_pos();
+        let job = ed.is_dirty().then(|| ed.save_job().ok()).flatten();
+        if let Some(job) = job {
+            if !self.send_file(FileJob::Save(job)) {
+                return;
+            }
+            self.saving += 1;
+        }
+        let cfg = Box::new(self.prefs.open.clone());
+        self.send_file(FileJob::Open { cfg, path, at });
+    }
+
+    /// What the file thread finished: a save marks the document clean (at the
+    /// version written) or is told of, everywhere `[notify]` says.
+    fn take_files(&mut self) {
+        while let Ok(d) = self.done.try_recv() {
+            match d {
+                FileDone::Saved { version, path, result } => {
+                    self.saving = self.saving.saturating_sub(1);
+                    let name = path.display().to_string();
+                    match result {
+                        Ok(()) => {
+                            if let Some(ed) = self.editor.as_mut().filter(|ed| ed.path() == Some(path.as_path())) {
+                                ed.saved(version);
+                            }
+                            let short = path.file_name().map_or(name.clone(), |n| n.to_string_lossy().into_owned());
+                            self.note = Some(self.table.trf("file.saved", &[&short]));
+                        }
+                        Err(e) => {
+                            let title = self.table.trf("file.save_failed", &[&name, &e]);
+                            notify::tell(&self.prefs.notify, self.table.tr("notify.save_failed"), &title, self.table.tr("notify.open"));
+                            self.notice(ito_notices::Kind::Err, title);
+                        }
+                    }
+                }
+                FileDone::OpenFailed(e) => {
+                    let title = self.table.trf("file.editor_failed", &[&e]);
+                    self.notice(ito_notices::Kind::Err, title);
+                }
+            }
+        }
+    }
+
+    /// The structure worker: ask for a reading of the text as it is, keep
+    /// the newest that came back.
+    fn take_tree(&mut self) {
+        let Some(ed) = &self.editor else { return };
+        self.worker.ask(ed.version(), ed.text());
+        if let Some(t) = self.worker.take() {
+            if self.tree.as_ref().is_none_or(|old| old.version <= t.version) {
+                self.tree = Some(t);
+            }
         }
     }
 
@@ -255,7 +627,40 @@ impl App {
             out.push_str(&format!("page: {}\n", self.prefs.state.page));
         }
         out.push_str(&format!("palette: {}\nnotices: {}\n", if self.palette.is_some() { "open" } else { "closed" }, self.notices.len()));
+        let quit = match self.quit {
+            None => "no",
+            Some(Quit::Asking) => "asking",
+            Some(Quit::Saving) => "saving",
+            Some(Quit::Go) => "go",
+        };
+        out.push_str(&format!("quit: {quit}\n"));
+        if let Some(ed) = &self.editor {
+            let (line, col) = ed.line_col();
+            let file = ed.path().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let section = self.section().unwrap_or_default();
+            out.push_str(&format!(
+                "file: {file}\ndirty: {}\nlocked: {}\ncaret: {}:{}\nsection: {section}\nlines: {}\n",
+                ed.is_dirty(),
+                ed.locked().is_some(),
+                line + 1,
+                col + 1,
+                ito_textbuf::pos::line_count(ed.text()),
+            ));
+            // The text on one line, as Rust writes a string, cut short.
+            let text: String = ed.text().escape_debug().take(400).collect();
+            out.push_str(&format!("text: {text}\n"));
+        }
         out
+    }
+
+    /// The title of the section the caret is in, by the newest reading.
+    fn section(&self) -> Option<String> {
+        let (ed, tree) = (self.editor.as_ref()?, self.tree.as_ref()?);
+        // A section's range ends where the text does, so a caret at the very
+        // end is asked about as the byte before it (until uchmk/ito#161).
+        let at = ed.caret().min(ed.text().len().saturating_sub(1));
+        let i = ito_outline::at_byte(&tree.headings, at)?;
+        Some(tree.headings[i].title.clone())
     }
 
     /// `<State:name>` and the done file: what the window shows, then `tail`.
@@ -284,6 +689,8 @@ impl App {
                     if let Some(done) = script.done.clone() {
                         self.write_state(done, &ito_keyscript::quit_report(script.left()));
                     }
+                    // The script's end, not a person's: nothing is asked.
+                    self.quit = Some(Quit::Go);
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
                 Do::Theme(name) => {
@@ -378,7 +785,7 @@ impl App {
         self.prefs.set_scale(next, self.table.tr("settings.no_folder"));
         ctx.set_zoom_factor(next);
         ito_statusbar::scale_changed(ctx, next);
-        self.scale_note = Some(ito_common::scale_text(next, &self.lang));
+        self.note = Some(ito_common::scale_text(next, &self.lang));
     }
 
     /// common.toml changed (the settings, another app at the same desk, an
@@ -425,18 +832,52 @@ impl App {
         errors
     }
 
-    /// The bottom bar: the app's items on the left (add yours here), the clock
-    /// from common.toml at the right end, the scale's words after a change.
+    /// The bottom bar: on the left the caret's line and column, the section
+    /// it is in, what is not saved yet and how the file is written (its line
+    /// endings, a BOM); the last thing done (a save, the scale) after them;
+    /// the clock from common.toml at the right end.
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         let clock = self.prefs.common.clock_or(None);
         let spec = ito_statusbar::Spec { clock: &clock, lang: &self.lang, opacity: 1.0 };
-        let note = self.scale_note.clone();
+        let c = ito_theme::colors();
+        let t = &self.table;
+        let mut items: Vec<(String, egui::Color32)> = Vec::new();
+        if let Some(ed) = &self.editor {
+            let (line, col) = ed.line_col();
+            items.push((t.trf("status.line_col", &[&(line + 1).to_string(), &(col + 1).to_string()]), c.fg));
+            if let Some(s) = self.section() {
+                items.push((s, c.dim));
+            }
+            if ed.locked().is_some() {
+                items.push((t.tr("status.read_only").to_owned(), c.wait));
+            } else if ed.is_dirty() {
+                items.push((t.tr("status.unsaved").to_owned(), c.wait));
+            }
+            if self.saving > 0 {
+                items.push((t.tr("status.saving").to_owned(), c.dim));
+            }
+            let eol = match ed.eol() {
+                ito_textbuf::Eol::Lf => Some("status.lf"),
+                ito_textbuf::Eol::Crlf => Some("status.crlf"),
+                ito_textbuf::Eol::Mixed => Some("status.mixed"),
+                ito_textbuf::Eol::None => None,
+            };
+            if let Some(k) = eol {
+                items.push((t.tr(k).to_owned(), c.dim));
+            }
+            if ed.bom() {
+                items.push((t.tr("status.bom").to_owned(), c.dim));
+            }
+        }
+        if let Some(n) = &self.note {
+            items.push((n.clone(), c.dim));
+        }
         ito_statusbar::show(
             ui,
             &spec,
             |ui| {
-                if let Some(n) = &note {
-                    ito_statusbar::item(ui, n, ito_theme::colors().dim);
+                for (s, color) in &items {
+                    ito_statusbar::item(ui, s, *color);
                 }
             },
             |_| {},
@@ -490,15 +931,16 @@ impl App {
         }
     }
 
+    /// The palette's list: the bug report and the scale, then the commands
+    /// in [`commands::ALL`]'s order, with the words the key help uses.
     fn commands(&self) -> Vec<ito_palette::Entry<Command>> {
         let t = &self.table;
-        vec![
+        let mut out = vec![
             ito_palette::Entry::new(t.tr("palette.report_bug"), "F12", Command::ReportBug),
             ito_palette::Entry::new(t.tr("palette.reset_scale"), "Ctrl+0", Command::ResetScale),
-            ito_palette::Entry::new(t.tr("palette.settings"), self.keys.label("settings"), Command::Settings),
-            ito_palette::Entry::new(t.tr("palette.help"), self.keys.label("help"), Command::Help),
-            ito_palette::Entry::new(t.tr("palette.quit"), self.keys.label("quit"), Command::Quit),
-        ]
+        ];
+        out.extend(commands::palette().map(|d| ito_palette::Entry::new(t.tr_desc(d.desc), self.keys.label(d.name), Command::Run(d.name))));
+        out
     }
 
     /// Ctrl+Shift+P opens the palette; while it is open it takes the keys.
@@ -524,26 +966,29 @@ impl App {
             None => self.palette = Some(view),
             Some(ito_palette::Answer::Pick(Command::ReportBug)) => self.report_bug(ctx),
             Some(ito_palette::Answer::Pick(Command::ResetScale)) => self.scale_to(ctx, ito_common::ScaleTo::Reset),
-            Some(ito_palette::Answer::Pick(Command::Settings)) => self.open_settings(),
-            Some(ito_palette::Answer::Pick(Command::Help)) => self.help.toggle(),
-            Some(ito_palette::Answer::Pick(Command::Quit)) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            Some(ito_palette::Answer::Pick(Command::Run(name))) => self.run_key(ctx, keymap::Cmd::Run(name)),
             Some(_) => {}
         }
+    }
+
+    /// One line under the bell.
+    fn notice(&mut self, kind: ito_notices::Kind, title: String) {
+        self.next_notice += 1;
+        self.notices.push(ito_notices::Notice {
+            id: self.next_notice,
+            at: std::time::SystemTime::now(),
+            kind,
+            title,
+            note: None,
+            go: None,
+            read: false,
+        });
     }
 
     /// What the files got wrong, and what a writer could not do, go under the bell.
     fn take_notices(&mut self) {
         for title in std::mem::take(&mut self.key_notes) {
-            self.next_notice += 1;
-            self.notices.push(ito_notices::Notice {
-                id: self.next_notice,
-                at: std::time::SystemTime::now(),
-                kind: ito_notices::Kind::Warn,
-                title,
-                note: None,
-                go: None,
-                read: false,
-            });
+            self.notice(ito_notices::Kind::Warn, title);
         }
     }
 
@@ -587,6 +1032,29 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.sync_common(&ctx);
+        self.take_files();
+        self.quit_after_save(&ctx);
+        // The window's close (the bar's ×, Alt+F4) asks first, as Ctrl+Q does.
+        if ctx.input(|i| i.viewport().close_requested()) && self.quit != Some(Quit::Go) {
+            if self.dirty() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
+            self.quit(&ctx);
+        }
+        if self.quit == Some(Quit::Asking) {
+            self.quit_keys(&ctx);
+        }
+        if self.editing() {
+            // The document takes the keys without a widget's focus: one left
+            // over (the settings, the palette) would type too, and Tab would
+            // walk the bar's buttons.
+            ctx.memory_mut(|m| {
+                if let Some(id) = m.focused() {
+                    m.surrender_focus(id);
+                }
+                m.move_focus(egui::FocusDirection::None);
+            });
+        }
         // The Keys page is taking a key: every key is that key, F12 too.
         let taking = self.settings_open && self.prefs.keys_edit.busy();
         if !taking && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F12)) {
@@ -617,14 +1085,37 @@ impl eframe::App for App {
                 // Esc and the scrolling keys are the help's before the keymap reads them.
                 self.help.keys(&ctx);
             }
+            if self.editing() {
+                // While the input method composes, its keys (Enter, the arrows) are its own.
+                self.view.swallow(&ctx);
+            }
             self.read_keys(&ctx);
-            // No editor yet: the ghost stands where the document will be.
-            let look = ito_prefs::Look { c: ito_theme::colors(), q: "" };
-            let _ = ito_prefs::empty_state(ui, look, ito_prefs::Mark::Info, self.table.tr("app.hello"), self.table.tr("app.bug"), None);
+            // A key may have opened the help or the settings.
+            let editing = self.editing();
+            let now = self.now_ms();
+            if let Some(ed) = &mut self.editor {
+                if !editing {
+                    ed.seal();
+                }
+                self.view.show(ui, ed, self.tree.as_ref(), editing, now);
+            } else {
+                // No file: the ghost stands where the document would be.
+                let look = ito_prefs::Look { c: ito_theme::colors(), q: "" };
+                let _ = ito_prefs::empty_state(
+                    ui,
+                    look,
+                    ito_prefs::Mark::Info,
+                    self.table.tr("empty.title"),
+                    self.table.tr("empty.body"),
+                    None,
+                );
+            }
             if self.help.open {
                 help::show(ui, self, r);
             }
         }
+        self.quit_question(&ctx);
+        self.take_tree();
         self.script(&ctx);
         // Last, so the edges of the frameless window win over what is under them.
         if !cfg!(target_os = "macos") {
@@ -716,10 +1207,20 @@ fn say(text: &str, err: bool) {
     }
 }
 
+/// `FILE` off the front of the arguments: the first, when it is not an
+/// option or `env`. What is left is for [`keys_arg`] and the options.
+fn file_arg(args: &[String]) -> (Option<PathBuf>, &[String]) {
+    match args {
+        [f, rest @ ..] if !f.starts_with('-') && f != "env" => (Some(PathBuf::from(f)), rest),
+        _ => (None, args),
+    }
+}
+
 fn main() -> eframe::Result {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let all: Vec<String> = std::env::args().skip(1).collect();
+    let (file, args) = file_arg(&all);
     let done = std::env::var_os("WEFT_KEYS_DONE").filter(|v| !v.is_empty()).map(PathBuf::from);
-    let script = match keys_arg(&args) {
+    let script = match keys_arg(args) {
         Ok(s) => s,
         Err(e) => {
             // A run started detached never sees the message: the done file carries it (ito #193).
@@ -764,7 +1265,7 @@ fn main() -> eframe::Result {
                 r.watch(cc.egui_ctx.clone());
                 r
             });
-            Ok(Box::new(App::new(cc, &saved, script)))
+            Ok(Box::new(App::new(cc, &saved, script, file)))
         }),
     )
 }
@@ -786,16 +1287,76 @@ mod tests {
         assert_eq!(a(&["--keys", "j", "--more"]).unwrap_err(), "unknown argument `--more`");
     }
 
-    /// 4.2: The palette and the keymap name the same things: every action
-    /// the keymap may bind is in the palette with its key.
+    /// 4.2: The palette and the keymap name the same things: every command
+    /// the palette lists is in it with its key and the key help's words.
     #[test]
-    fn every_keymap_action_is_in_the_palette() {
+    fn every_palette_command_is_in_the_palette_with_its_key() {
         let app = App::for_tests();
         let entries = app.commands();
-        for name in keymap::ACTIONS {
-            let key = app.keys.label(name);
-            assert!(!key.is_empty(), "{name} has no default key");
-            assert!(entries.iter().any(|e| e.key == key), "{name} ({key}) is not in the palette");
+        assert_eq!(entries.len(), 2 + commands::palette().count());
+        for d in commands::palette() {
+            let key = app.keys.label(d.name);
+            let title = app.table.tr_desc(d.desc);
+            assert!(entries.iter().any(|e| e.key == key && e.title == title), "{} ({key}) is not in the palette", d.name);
         }
+        let quit = entries.iter().find(|e| matches!(e.pick, Command::Run("quit"))).unwrap();
+        assert_eq!(quit.key, "Ctrl+Q");
+    }
+
+    /// 8.6: Quitting with changes not saved asks first; Esc stays, N goes
+    /// without writing, a save that cannot happen leaves the window open, and
+    /// one that lands closes it.
+    #[test]
+    fn quitting_with_changes_asks_and_closes_once_the_save_lands() {
+        let ctx = egui::Context::default();
+        let mut app = App::for_tests();
+        app.quit(&ctx);
+        assert_eq!(app.quit, Some(Quit::Go), "nothing open: nothing to lose");
+
+        let mut app = App::for_tests();
+        let mut ed = engine::Editor::new("a");
+        ed.insert("b", 0);
+        app.editor = Some(ed);
+        app.quit(&ctx);
+        app.answer_quit(&ctx, 1);
+        assert_eq!(app.quit, Some(Quit::Go), "N quits as it is");
+        assert_eq!(app.saving, 0, "and writes nothing");
+
+        let mut app = App::for_tests();
+        let mut ed = engine::Editor::new("a");
+        ed.insert("b", 0);
+        app.editor = Some(ed);
+        app.quit(&ctx);
+        assert_eq!(app.quit, Some(Quit::Asking));
+        assert!(!app.editing(), "the question has the keys");
+        app.answer_quit(&ctx, 0);
+        assert_eq!(app.quit, None, "Esc stays");
+        assert!(app.editing());
+        // No file to save to: told under the bell, and the window stays.
+        app.quit(&ctx);
+        app.answer_quit(&ctx, 2);
+        app.quit_after_save(&ctx);
+        assert_eq!(app.quit, None);
+        assert_eq!(app.notices.len(), 1);
+
+        let dir = std::env::temp_dir().join(format!("weft-quit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("q.md");
+        std::fs::write(&file, "a").unwrap();
+        let mut app = App::for_tests();
+        app.open(&file);
+        app.editor.as_mut().unwrap().insert("b", 0);
+        app.quit(&ctx);
+        app.answer_quit(&ctx, 2);
+        assert_eq!(app.quit, Some(Quit::Saving));
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while app.saving > 0 && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            app.take_files();
+        }
+        app.quit_after_save(&ctx);
+        assert_eq!(app.quit, Some(Quit::Go), "saved, so the window closes");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "ba");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

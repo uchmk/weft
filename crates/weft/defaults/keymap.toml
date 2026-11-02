@@ -1,6 +1,10 @@
 # The built-in keys. A person's own keymap.toml (in the app's folder) lays over
-# this. The three below are the same in every uchmk app (ito_keymap::COMMON).
+# this. The first three are the same in every uchmk app (ito_keymap::COMMON).
 # `desc` is the English text the help shows; lang/*.toml's [keydesc] translates it.
+#
+# [app] keys work anywhere in the window; [edit] keys only while the document
+# has the keys, and are looked at first then. Copy, cut and paste (Ctrl+C,
+# Ctrl+X, Ctrl+V) are the window's and cannot be bound.
 
 # --- Common ---
 
@@ -18,3 +22,203 @@ desc = "Show the key help"
 on = "<C-q>"
 run = "quit"
 desc = "Quit"
+
+# --- File and history ---
+
+[[app.keymap]]
+on = "<C-s>"
+run = "file.save"
+desc = "Save the file"
+
+[[app.keymap]]
+on = "<C-e>"
+run = "file.open_in_editor"
+desc = "Open in the external editor at the caret"
+
+[[app.keymap]]
+on = "<C-z>"
+run = "edit.undo"
+desc = "Undo"
+
+[[app.keymap]]
+on = "<C-y>"
+run = "edit.redo"
+desc = "Redo"
+
+[[app.keymap]]
+on = "<C-S-z>"
+run = "edit.redo"
+desc = "Redo"
+
+# --- The caret ---
+
+[[edit.keymap]]
+on = "<Left>"
+run = "cursor.left"
+desc = "Move left"
+
+[[edit.keymap]]
+on = "<Right>"
+run = "cursor.right"
+desc = "Move right"
+
+[[edit.keymap]]
+on = "<Up>"
+run = "cursor.up"
+desc = "Move up a line"
+
+[[edit.keymap]]
+on = "<Down>"
+run = "cursor.down"
+desc = "Move down a line"
+
+[[edit.keymap]]
+on = "<Home>"
+run = "cursor.line_start"
+desc = "To the start of the line"
+
+[[edit.keymap]]
+on = "<End>"
+run = "cursor.line_end"
+desc = "To the end of the line"
+
+[[edit.keymap]]
+on = "<C-Home>"
+run = "cursor.doc_start"
+desc = "To the start of the document"
+
+[[edit.keymap]]
+on = "<C-End>"
+run = "cursor.doc_end"
+desc = "To the end of the document"
+
+[[edit.keymap]]
+on = "<PageUp>"
+run = "cursor.page_up"
+desc = "Up a page"
+
+[[edit.keymap]]
+on = "<PageDown>"
+run = "cursor.page_down"
+desc = "Down a page"
+
+# --- Selecting ---
+
+[[edit.keymap]]
+on = "<S-Left>"
+run = "select.left"
+desc = "Select left"
+
+[[edit.keymap]]
+on = "<S-Right>"
+run = "select.right"
+desc = "Select right"
+
+[[edit.keymap]]
+on = "<S-Up>"
+run = "select.up"
+desc = "Select up a line"
+
+[[edit.keymap]]
+on = "<S-Down>"
+run = "select.down"
+desc = "Select down a line"
+
+[[edit.keymap]]
+on = "<S-Home>"
+run = "select.line_start"
+desc = "Select to the start of the line"
+
+[[edit.keymap]]
+on = "<S-End>"
+run = "select.line_end"
+desc = "Select to the end of the line"
+
+[[edit.keymap]]
+on = "<C-S-Home>"
+run = "select.doc_start"
+desc = "Select to the start of the document"
+
+[[edit.keymap]]
+on = "<C-S-End>"
+run = "select.doc_end"
+desc = "Select to the end of the document"
+
+[[edit.keymap]]
+on = "<S-PageUp>"
+run = "select.page_up"
+desc = "Select up a page"
+
+[[edit.keymap]]
+on = "<S-PageDown>"
+run = "select.page_down"
+desc = "Select down a page"
+
+[[edit.keymap]]
+on = "<C-a>"
+run = "select.all"
+desc = "Select all"
+
+# --- Typing ---
+
+[[edit.keymap]]
+on = "<BS>"
+run = "edit.backspace"
+desc = "Delete before the caret"
+
+[[edit.keymap]]
+on = "<Del>"
+run = "edit.delete"
+desc = "Delete after the caret"
+
+[[edit.keymap]]
+on = "<CR>"
+run = "edit.newline"
+desc = "Break the line"
+
+# --- Structure ---
+
+[[edit.keymap]]
+on = "<A-Up>"
+run = "block.move_up"
+desc = "Move the block up"
+
+[[edit.keymap]]
+on = "<A-Down>"
+run = "block.move_down"
+desc = "Move the block down"
+
+[[edit.keymap]]
+on = "<A-S-Up>"
+run = "section.move_up"
+desc = "Move the section up"
+
+[[edit.keymap]]
+on = "<A-S-Down>"
+run = "section.move_down"
+desc = "Move the section down"
+
+[[edit.keymap]]
+on = "<A-S-Left>"
+run = "section.promote"
+desc = "Promote the heading"
+
+[[edit.keymap]]
+on = "<A-S-Right>"
+run = "section.demote"
+desc = "Demote the heading"
+
+[[edit.keymap]]
+on = "<A-Right>"
+run = "list.indent"
+desc = "Indent the list item"
+
+[[edit.keymap]]
+on = "<A-Left>"
+run = "list.outdent"
+desc = "Outdent the list item"
+
+[[edit.keymap]]
+on = "<C-CR>"
+run = "list.toggle_task"
+desc = "Toggle the task"

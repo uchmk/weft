@@ -106,8 +106,8 @@ pub fn groups(app: &App) -> Vec<Group> {
                 None => rows.push((keys, desc)),
             }
         }
-        // The one layer, "app", is named "keys.main" in the tables (as the
-        // settings' Keys page names it); any other layer is named after itself.
+        // "app" is named "keys.main" in the tables (as the settings' Keys
+        // page names it); "edit" is "keys.edit".
         let title = if name == "app" { tr("keys.main") } else { tr(&format!("keys.{name}")) };
         out.push(Group { title, rows });
     }
@@ -118,6 +118,7 @@ pub fn groups(app: &App) -> Vec<Group> {
             (key("Ctrl+Shift+P"), tr("title.search")),
             (format!("{} / {}", key("Ctrl++"), key("Ctrl+-")), tr("help.scale")),
             (key("Ctrl+0"), tr("palette.reset_scale")),
+            (format!("{} / {} / {}", key("Ctrl+C"), key("Ctrl+X"), key("Ctrl+V")), tr("help.clipboard")),
         ],
     });
     out.push(Group {

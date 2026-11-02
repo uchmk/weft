@@ -1,8 +1,6 @@
 # The app's words by key (English first; ja.toml lays over it).
 [app]
 title = "weft"
-hello = "Hello from weft."
-bug = "Report a problem (F12)"
 
 [title]
 search = "Command palette"
@@ -28,12 +26,10 @@ hint = "Type a command"
 none = "No command matches"
 report_bug = "Report a problem"
 reset_scale = "Reset the scale"
-settings = "Settings"
-help = "Key help"
-quit = "Quit"
 
 [keys]
 main = "Everywhere"
+edit = "Editing"
 fixed = "weft reads {} itself: bound here, it never runs."
 
 # The keymap's `desc` (English) as the help and the Keys page show it.
@@ -41,6 +37,47 @@ fixed = "weft reads {} itself: bound here, it never runs."
 "Open the settings" = "Open the settings"
 "Show the key help" = "Show the key help"
 "Quit" = "Quit"
+"Save the file" = "Save the file"
+"Open in the external editor at the caret" = "Open in the external editor at the caret"
+"Undo" = "Undo"
+"Redo" = "Redo"
+"Move left" = "Move left"
+"Move right" = "Move right"
+"Move up a line" = "Move up a line"
+"Move down a line" = "Move down a line"
+"To the start of the line" = "To the start of the line"
+"To the end of the line" = "To the end of the line"
+"To the start of the document" = "To the start of the document"
+"To the end of the document" = "To the end of the document"
+"Up a page" = "Up a page"
+"Down a page" = "Down a page"
+"Select left" = "Select left"
+"Select right" = "Select right"
+"Select up a line" = "Select up a line"
+"Select down a line" = "Select down a line"
+"Select to the start of the line" = "Select to the start of the line"
+"Select to the end of the line" = "Select to the end of the line"
+"Select to the start of the document" = "Select to the start of the document"
+"Select to the end of the document" = "Select to the end of the document"
+"Select up a page" = "Select up a page"
+"Select down a page" = "Select down a page"
+"Delete before the caret" = "Delete before the caret"
+"Delete after the caret" = "Delete after the caret"
+"Break the line" = "Break the line"
+"Select all" = "Select all"
+"Move the block up" = "Move the block up"
+"Move the block down" = "Move the block down"
+"Move the section up" = "Move the section up"
+"Move the section down" = "Move the section down"
+"Promote the heading" = "Promote the heading"
+"Demote the heading" = "Demote the heading"
+"Indent the list item" = "Indent the list item"
+"Outdent the list item" = "Outdent the list item"
+"Toggle the task" = "Toggle the task"
+"Renumber the list" = "Renumber the list"
+"Format the table" = "Format the table"
+"To the next cell" = "To the next cell"
+"To the previous cell" = "To the previous cell"
 
 [help]
 title = "Keys"
@@ -50,6 +87,7 @@ this = "This list"
 scale = "Larger / smaller"
 scroll = "Scroll this list"
 close_row = "Close"
+clipboard = "Copy / cut / paste"
 
 [settings]
 general = "General"
@@ -71,3 +109,34 @@ save_failed = "Could not save"
 save_failed_sound = "Sound when a file could not be saved"
 test_title = "weft: test notification"
 test_body = "A file that could not be saved is told like this."
+
+[file]
+saved = "Saved {0}"
+save_failed = "Could not save {0}: {1}"
+no_path = "This document has no file yet: start weft with a file name to save to"
+locked = "{0} is not UTF-8: it opened read-only and is not saved"
+editor_failed = "Could not open the external editor: {0}"
+open_failed = "Could not open {0}: {1}"
+no_thread = "weft could not start its file thread: nothing can be saved"
+
+# Quitting with changes that are not saved.
+[quit]
+title = "Unsaved changes"
+body = "{0} has changes that are not saved."
+save = "Save and quit"
+discard = "Quit without saving"
+cancel = "Cancel"
+
+[status]
+line_col = "Ln {0}, Col {1}"
+lf = "LF"
+crlf = "CRLF"
+mixed = "Mixed line endings"
+bom = "BOM"
+read_only = "Read-only"
+unsaved = "Unsaved"
+saving = "Saving…"
+
+[empty]
+title = "No file is open"
+body = "Start weft with a Markdown file: weft FILE.md"
