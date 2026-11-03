@@ -563,10 +563,13 @@ impl App {
             "file.save" => self.save(),
             "file.open_in_editor" => self.open_in_editor(),
             _ if self.editing() => {
-                let (now, page, tab) = (self.now_ms(), self.view.page(), self.prefs.tab_width);
+                let (now, page) = (self.now_ms(), self.view.page());
+                let (tab, tab_char) = (self.prefs.tab_width, self.prefs.tab_char);
                 let Some(ed) = &mut self.editor else { return };
-                // The settings' tab width, for Tab outside tables and lists.
+                // The settings' tab width and tab character, for Tab outside
+                // tables and lists.
                 ed.set_tab_width(tab);
+                ed.set_tab_char(tab_char);
                 let done = commands::edit(ed, name, now, page);
                 if done.is_some() {
                     self.view.follow = true;

@@ -37,7 +37,7 @@ const CONFIG_FILE: &str = "config.toml";
 fn index(w: &'static Words, more: &'static MoreWords, lang: &str, t: &ito_i18n::Table) -> Vec<(usize, String)> {
     let keys = ito_prefs::keys_index(ito_prefs::KeyWords::of(lang)).into_iter().map(|t| (KEYS, t));
     let layers = LAYERS.iter().map(|(_, k)| (KEYS, t.tr(k)));
-    let editor = ["settings.tab", "settings.tab_width"].into_iter().map(|k| (EDITOR, t.tr(k)));
+    let editor = ["settings.tab", "settings.tab_width", "settings.tab_char"].into_iter().map(|k| (EDITOR, t.tr(k)));
     vec![
         (GENERAL, w.language),
         (GENERAL, w.scale),
@@ -59,6 +59,7 @@ fn index(w: &'static Words, more: &'static MoreWords, lang: &str, t: &ito_i18n::
         (THEME, "light_theme"),
         (EDITOR, "[editor]"),
         (EDITOR, "tab_width"),
+        (EDITOR, "tab_char"),
         (EDITOR, CONFIG_FILE),
         (KEYS, "keymap.toml"),
         (KEYS, "prepend_keymap"),
@@ -110,12 +111,14 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     // what "Send a test" asked for.
     let mut notify_new: Option<ito_prefs::Notify> = None;
     let mut test = None;
-    // The tab width picked on the Editing page.
+    // The tab width picked on the Editing page, and the tab character
+    // switched on or off.
     let mut tab_new: Option<usize> = None;
+    let mut tab_char_new: Option<bool> = None;
     let prefs = &mut app.prefs;
     let keys_edit = &mut prefs.keys_edit;
     let (notify, notify_warn, drafts) = (&prefs.notify, &prefs.notify_warn, &mut prefs.notify_drafts);
-    let (tab_now, editor_warn) = (prefs.tab_width, &prefs.editor_warn);
+    let (tab_now, tab_char_now, editor_warn) = (prefs.tab_width, prefs.tab_char, &prefs.editor_warn);
     let mut bug = false;
     let mut forget = false;
     let mut advanced = Vec::new();
@@ -160,6 +163,11 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                 });
                 if picked.is_some() {
                     tab_new = picked;
+                }
+                ito_prefs::sep(ui, l);
+                let (label, note) = (tr("settings.tab_char"), tr("settings.tab_char_note"));
+                if ito_prefs::keyed_row(ui, l, "tab_char", &label, &note, |ui| ito_prefs::switch(ui, l, tab_char_now)) {
+                    tab_char_new = Some(!tab_char_now);
                 }
             });
         }
@@ -220,6 +228,9 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     }
     if let Some(n) = tab_new {
         app.prefs.tab_width_edit(n, &no_folder);
+    }
+    if let Some(on) = tab_char_new {
+        app.prefs.tab_char_edit(on, &no_folder);
     }
     if forget {
         if let Some(dir) = &state_dir {
@@ -307,5 +318,7 @@ mod tests {
         assert!(idx.iter().any(|(p, t)| *p == NOTIFY && t == "config.toml"));
         assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "tab_width"));
         assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "Tab width"));
+        assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "tab_char"));
+        assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "Insert a tab character"));
     }
 }

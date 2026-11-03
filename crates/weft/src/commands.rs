@@ -94,8 +94,8 @@ pub const ALL: &[Def] = &[
     doc("table.format", "Format the table"),
     doc("table.next_cell", "To the next cell"),
     doc("table.prev_cell", "To the previous cell"),
-    doc("edit.tab", "Next cell, indent the item or put in spaces"),
-    doc("edit.untab", "Previous cell, outdent the item or take spaces away"),
+    doc("edit.tab", "Next cell, indent the item or the lines, or put in a tab"),
+    doc("edit.untab", "Previous cell, outdent the item or the lines, or take a tab away"),
 ];
 
 /// The command named `name`.
@@ -176,25 +176,33 @@ pub fn edit(ed: &mut Editor, name: &str, now_ms: u64, page: usize) -> Option<boo
         "table.format" => ed.structure(ito_mdedit::format_table),
         "table.next_cell" => ed.structure(|t, b| ito_mdedit::next_cell(t, b, Step::Next)),
         "table.prev_cell" => ed.structure(|t, b| ito_mdedit::next_cell(t, b, Step::Prev)),
-        // Tab: in a table the next cell (past the last one, a new row); on a
-        // list item the item one level in; anywhere else the tab width in
-        // spaces (before each line of a selection that crosses a break).
+        // Tab over a selection that crosses a line break: each line one
+        // level in (a list item with its nested lines, a table's rows only
+        // inside an item, blank lines not). Otherwise, in a table the next
+        // cell (past the last one, a new row); on a list item the item one
+        // level in; anywhere else a tab or the tab width in spaces.
         "edit.tab" => {
-            let width = ed.tab_width();
-            ed.structure(|t, b| ito_mdedit::next_cell(t, b, Step::Next).or_else(|| ito_mdedit::indent_item(t, b))) || ed.indent(width)
+            if ed.spans_lines() {
+                ed.shift_lines(true)
+            } else {
+                ed.structure(|t, b| ito_mdedit::next_cell(t, b, Step::Next).or_else(|| ito_mdedit::indent_item(t, b))) || ed.indent()
+            }
         }
-        // Shift+Tab undoes what Tab does where it is: in a table the cell
-        // before (nothing at the first), on a list item the item one level
-        // out (nothing at the top level), anywhere else up to the tab width
-        // of spaces off the start of the line (of each line selected).
+        // Shift+Tab undoes what Tab does where it is: over lines, each line
+        // one level out; in a table the cell before (nothing at the first),
+        // on a list item the item one level out (nothing at the top level),
+        // anywhere else a tab or up to the tab width of spaces off the start
+        // of the line.
         "edit.untab" => {
             let (text, caret) = (ed.text(), ed.caret());
-            if ito_mdedit::next_cell(text, caret, Step::Next).is_some() {
+            if ed.spans_lines() {
+                ed.shift_lines(false)
+            } else if ito_mdedit::next_cell(text, caret, Step::Next).is_some() {
                 ed.structure(|t, b| ito_mdedit::next_cell(t, b, Step::Prev))
             } else if ito_mdedit::indent_item(text, caret).is_some() {
                 ed.structure(ito_mdedit::outdent_item)
             } else {
-                ed.outdent(ed.tab_width())
+                ed.outdent()
             }
         }
         _ => return None,
@@ -550,5 +558,206 @@ mod tests {
         assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
         assert_eq!(ed.text(), "- top\n- tabbed\n");
         assert_eq!(&ed.text()[ed.caret()..], "tabbed\n");
+    }
+
+    fn select(text: &str, from: usize, to: usize) -> Editor {
+        let mut ed = at(text, from);
+        ed.set_caret(to, true);
+        ed
+    }
+
+    /// 8.16: Tab over several lines takes each one level in: a list item as
+    /// an item, any other line by the tab width, an empty line not at all;
+    /// Shift+Tab takes them back out. The selection stays on its lines.
+    #[test]
+    fn tab_over_items_and_paragraph_lines_takes_each_one_level_in_and_back() {
+        let t = "para\n- a\n- b\n";
+        let mut ed = at(t, 0);
+        edit(&mut ed, "select.all", 0, 10);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "    para\n  - a\n  - b\n", "the items by a list level, the paragraph by the tab width");
+        assert_eq!(ed.selected_text().as_deref(), Some(ed.text()));
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+        assert_eq!(ed.selected_text().as_deref(), Some(t));
+
+        // Ends inside lines: they stay where they were among the words.
+        let t = "x\npara\n- a\n- b\ny\n";
+        let mut ed = select(t, t.find("ra").unwrap(), t.find("b\n").unwrap());
+        assert_eq!(ed.selected_text().as_deref(), Some("ra\n- a\n- "));
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "x\n    para\n  - a\n  - b\ny\n", "only the lines the selection is on");
+        assert_eq!(ed.selected_text().as_deref(), Some("ra\n  - a\n  - "));
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+        assert_eq!(ed.selected_text().as_deref(), Some("ra\n- a\n- "));
+
+        // A selection that ends at the start of a line leaves that line be.
+        let t = "- a\n- b\n- c\n";
+        let mut ed = select(t, 0, "- a\n- b\n".len());
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "  - a\n  - b\n- c\n");
+        assert_eq!(ed.selected_text().as_deref(), Some("  - a\n  - b\n"));
+
+        // Pressed again, it goes on from where it is.
+        let t = "para\n- a\n- b";
+        let mut ed = at(t, 0);
+        edit(&mut ed, "select.all", 0, 10);
+        edit(&mut ed, "edit.tab", 0, 10);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "        para\n    - a\n    - b");
+        assert_eq!(ed.selected_text().as_deref(), Some(ed.text()));
+    }
+
+    /// 8.16: With a parent item and its child both selected, the parent goes
+    /// and takes the child: the child is not moved a second time. A top-level
+    /// item does not go out, and neither do the items under it.
+    #[test]
+    fn tab_over_a_parent_and_its_child_moves_the_child_once() {
+        let t = "- a\n  - b\n    more\n- c\n";
+        let mut ed = at(t, 0);
+        edit(&mut ed, "select.all", 0, 10);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "  - a\n    - b\n      more\n  - c\n");
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(false), "a and c are at the left edge: b stays under a");
+        assert_eq!(ed.text(), t);
+        // The child alone, with the line after it.
+        let mut ed = select(t, t.find("- b").unwrap(), t.len());
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- a\n- b\n  more\n- c\n", "b goes out with its line; c is at the edge already");
+        // Numbered: the numbers follow.
+        let t = "1. a\n2. b\n3. c\n";
+        let mut ed = select(t, t.find('b').unwrap(), t.len());
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. a\n   1. b\n   2. c\n");
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+    }
+
+    /// 8.16: In a code fence every line is code: the fence lines and a `- x`
+    /// or table line in it all get the tab width, as text.
+    #[test]
+    fn tab_over_a_code_fence_indents_every_line_as_text() {
+        let t = "```\n- x\n| a |\n| - |\n```\n";
+        let mut ed = at(t, 0);
+        edit(&mut ed, "select.all", 0, 10);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "    ```\n    - x\n    | a |\n    | - |\n    ```\n");
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+    }
+
+    /// 8.16: A table's rows do not go in or out on their own: only with a
+    /// selected list item they are in. The lines round them still do.
+    #[test]
+    fn tab_over_lines_leaves_a_tables_own_rows_and_moves_one_in_an_item() {
+        let table = "| a | b |\n| --- | --- |\n| c | d |\n";
+        let mut ed = at(table, 0);
+        edit(&mut ed, "select.all", 0, 10);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(false), "nothing but table rows: nothing to do");
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(false));
+        assert_eq!(ed.text(), table);
+        let t = format!("para\n\n{table}\nend\n");
+        let mut ed = at(&t, 0);
+        edit(&mut ed, "select.all", 0, 10);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), format!("    para\n\n{table}\n    end\n"));
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+        let t = "- item\n  | a | b |\n  | --- | --- |\n  | c | d |\n";
+        let mut ed = at(t, 0);
+        edit(&mut ed, "select.all", 0, 10);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "  - item\n    | a | b |\n    | --- | --- |\n    | c | d |\n", "the table goes with its item");
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+    }
+
+    /// 8.16: CRLF lines keep their CRLF, items and other lines alike.
+    #[test]
+    fn tab_over_crlf_lines_keeps_crlf() {
+        let t = "para\r\n- a\r\n  - b\r\n";
+        let mut ed = at(t, 0);
+        edit(&mut ed, "select.all", 0, 10);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "    para\r\n  - a\r\n    - b\r\n");
+        assert_eq!(ed.selected_text().as_deref(), Some(ed.text()));
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+    }
+
+    /// 8.16: One press over several lines is one undo step: the text and the
+    /// selection come back as they were, one press at a time.
+    #[test]
+    fn tab_over_lines_is_one_undo_step_with_the_selection() {
+        let t = "x\npara\n- a\n- b\ny\n";
+        let (from, to) = (t.find("ra").unwrap(), t.find("b\n").unwrap());
+        let mut ed = select(t, from, to);
+        edit(&mut ed, "edit.tab", 0, 10);
+        edit(&mut ed, "edit.tab", 10, 10);
+        assert_eq!(ed.text(), "x\n        para\n    - a\n    - b\ny\n");
+        assert_eq!(edit(&mut ed, "edit.undo", 20, 10), Some(true));
+        assert_eq!(ed.text(), "x\n    para\n  - a\n  - b\ny\n");
+        assert_eq!(ed.selected_text().as_deref(), Some("ra\n  - a\n  - "));
+        assert_eq!(edit(&mut ed, "edit.undo", 30, 10), Some(true));
+        assert_eq!(ed.text(), t);
+        assert_eq!(ed.selected_text().as_deref(), Some("ra\n- a\n- "));
+        assert_eq!(edit(&mut ed, "edit.redo", 40, 10), Some(true));
+        assert_eq!(ed.text(), "x\n    para\n  - a\n  - b\ny\n");
+        assert_eq!(ed.selected_text().as_deref(), Some("ra\n  - a\n  - "));
+        edit(&mut ed, "edit.untab", 50, 10);
+        assert_eq!(ed.text(), t);
+        assert_eq!(edit(&mut ed, "edit.undo", 60, 10), Some(true));
+        assert_eq!(ed.text(), "x\n    para\n  - a\n  - b\ny\n", "Shift+Tab too");
+    }
+
+    /// 8.17: With the tab character on (the settings), Tab puts in a tab and
+    /// Shift+Tab takes one away (or up to the tab width of spaces); over
+    /// several lines each line gets one at its start. List items and table
+    /// cells are as before.
+    #[test]
+    fn with_the_tab_character_tab_puts_in_a_tab_and_shift_tab_takes_one_away() {
+        let mut ed = at("ab", 1);
+        ed.set_tab_char(true);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!((ed.text(), ed.caret()), ("a\tb", 2));
+        let mut ed = at("abcd", 1);
+        ed.set_tab_char(true);
+        ed.set_caret(3, true);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!((ed.text(), ed.caret()), ("a\td", 2), "the tab takes the selection's place");
+        let mut ed = at("\t\tx", 3);
+        ed.set_tab_char(true);
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!((ed.text(), ed.caret()), ("\tx", 2), "one tab, not both");
+        let mut ed = at("      x", 7);
+        ed.set_tab_char(true);
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "  x", "spaces: up to the tab width");
+
+        let t = "a\nb\n\n- c\n";
+        let mut ed = at(t, 0);
+        ed.set_tab_char(true);
+        edit(&mut ed, "select.all", 0, 10);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "\ta\n\tb\n\n  - c\n", "the item as an item, in spaces");
+        assert_eq!(ed.selected_text().as_deref(), Some(ed.text()));
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+        assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(true));
+        assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+
+        let mut ed = at("- a\n- b\n", "- a\n- ".len());
+        ed.set_tab_char(true);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- a\n  - b\n");
+        let table = "| a   | b   |\n| --- | --- |\n";
+        let mut ed = at(table, 2);
+        ed.set_tab_char(true);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!((ed.text(), &ed.text()[ed.caret()..ed.caret() + 1]), (table, "b"));
     }
 }

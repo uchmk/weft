@@ -46,8 +46,9 @@ pub struct Config {
     pub notify: NotifyCfg,
     pub open: ito_openin::Config,
     pub warnings: Vec<String>,
-    /// `[editor] tab_width`, and what the Editing page warns of.
+    /// `[editor] tab_width` and `tab_char`, and what the Editing page warns of.
     pub tab_width: usize,
+    pub tab_char: bool,
     pub editor_warn: Vec<String>,
 }
 
@@ -90,6 +91,35 @@ pub fn read_editor(text: Option<&str>) -> (usize, Vec<String>) {
     (width, warnings)
 }
 
+/// `[editor] tab_char` alone, read apart from `tab_width` so that a width
+/// that is not a number does not hide it.
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct TabCharFile {
+    editor: TabCharTable,
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct TabCharTable {
+    tab_char: Option<toml::Value>,
+}
+
+/// `[editor] tab_char` of the config.toml `text` (none: no file): whether Tab
+/// puts in a tab character instead of spaces, with what to warn of. A value
+/// that is not true or false is said, and false stands in for it; a file
+/// that does not read is said once, by `read_editor`.
+pub fn read_tab_char(text: Option<&str>) -> (bool, Vec<String>) {
+    match text.map(toml::from_str::<TabCharFile>) {
+        Some(Ok(f)) => match f.editor.tab_char {
+            Some(toml::Value::Boolean(on)) => (on, Vec::new()),
+            Some(v) => (false, vec![format!("config.toml: [editor] tab_char = {v} is not true or false; false is used")]),
+            None => (false, Vec::new()),
+        },
+        Some(Err(_)) | None => (false, Vec::new()),
+    }
+}
+
 /// The config.toml at `path` (none: the defaults): `[notify]` as the page
 /// shows it, the `secret:` addresses read back from the credential store,
 /// and `[open]` / `[line_args]`. Blocks on the store: call it off the UI
@@ -109,8 +139,10 @@ fn read_config(path: &Path) -> Result<Box<Config>, String> {
             warnings.push(w);
         }
     }
-    let (tab_width, editor_warn) = read_editor(text.as_deref());
-    Ok(Box::new(Config { notify, open, warnings, tab_width, editor_warn }))
+    let (tab_width, mut editor_warn) = read_editor(text.as_deref());
+    let (tab_char, char_warn) = read_tab_char(text.as_deref());
+    editor_warn.extend(char_warn);
+    Ok(Box::new(Config { notify, open, warnings, tab_width, tab_char, editor_warn }))
 }
 
 /// One lock for every writer of config.toml from the window.
@@ -220,6 +252,8 @@ pub struct Prefs {
     /// `[editor] tab_width` of config.toml: the spaces Tab puts in outside
     /// tables and lists. What the Editing page warns of beside it.
     pub tab_width: usize,
+    /// `[editor] tab_char`: Tab puts in a tab character instead of spaces.
+    pub tab_char: bool,
     pub editor_warn: Vec<String>,
     tx: Sender<Reload>,
     rx: Receiver<Reload>,
@@ -254,6 +288,7 @@ impl Prefs {
             open: ito_openin::Config::default(),
             notify_drafts: ito_prefs::Drafts::new(),
             tab_width: crate::engine::TAB_WIDTH,
+            tab_char: false,
             editor_warn: Vec::new(),
             tx,
             rx,
@@ -351,7 +386,7 @@ impl Prefs {
                 Reload::Config(Ok(c)) => {
                     let c = *c;
                     (self.notify, self.open, self.notify_warn) = (c.notify, c.open, c.warnings);
-                    (self.tab_width, self.editor_warn) = (c.tab_width, c.editor_warn);
+                    (self.tab_width, self.tab_char, self.editor_warn) = (c.tab_width, c.tab_char, c.editor_warn);
                 }
                 // Unreadable (being written, say): the pages keep what they
                 // had, and say so.
@@ -482,6 +517,22 @@ impl Prefs {
             return;
         }
         self.tab_width = width;
+        self.editor_write("tab_width", width.to_string(), no_folder);
+    }
+
+    /// The Editing page's "tab character" switch at once, and into
+    /// config.toml's `[editor]` as `tab_width` goes.
+    pub fn tab_char_edit(&mut self, on: bool, no_folder: &str) {
+        if on == self.tab_char {
+            return;
+        }
+        self.tab_char = on;
+        self.editor_write("tab_char", on.to_string(), no_folder);
+    }
+
+    /// Set `key` of config.toml's `[editor]` to `value` (already TOML) on a
+    /// thread, then read the file again.
+    fn editor_write(&self, key: &'static str, value: String, no_folder: &str) {
         let (tx, wake) = (self.tx.clone(), self.wake.clone());
         let Some(base) = self.base.clone() else {
             Self::send_back(&tx, &wake, Reload::Failed(no_folder.into()));
@@ -490,7 +541,7 @@ impl Prefs {
         std::thread::spawn(move || {
             let _one = CONFIG_ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
             let path = config_path(&base);
-            let r = match write_config(&path, Some("editor"), &[("tab_width", width.to_string())], None) {
+            let r = match write_config(&path, Some("editor"), &[(key, value)], None) {
                 Ok(()) => Reload::Config(read_config(&path)),
                 Err(e) => Reload::Failed(e),
             };
@@ -674,6 +725,34 @@ mod tests {
         assert!(warnings.len() == 1 && warnings[0].contains("tab_width = 3"), "{warnings:?}");
         let (width, warnings) = read_editor(Some("[editor]\ntab_width = \"wide\"\n"));
         assert!(width == 4 && warnings.len() == 1, "{warnings:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The Editing page's "tab character" switch lands in `[editor] tab_char`
+    /// beside the width and is read back; the other lines stay, a value that
+    /// is not true or false is said and stands at false, and a width that
+    /// does not read does not hide it. (3.10 checks the page itself.)
+    #[test]
+    fn the_tab_character_is_kept_beside_the_tab_width() {
+        let dir = std::env::temp_dir().join(format!("weft-tabchar-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = config_path(&dir);
+        assert_eq!(read_tab_char(None), (false, vec![]));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "# mine\n[editor]\ntab_width = 8\n").unwrap();
+        for on in [true, false, true] {
+            write_config(&path, Some("editor"), &[("tab_char", on.to_string())], None).unwrap();
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(text.starts_with("# mine\n[editor]\ntab_width = 8\n"), "{text}");
+            assert!(text.contains(&format!("tab_char = {on}")), "{text}");
+            assert_eq!(read_tab_char(Some(&text)), (on, vec![]));
+            let c = read_config(&path).unwrap();
+            assert!(c.editor_warn.is_empty() && c.tab_char == on && c.tab_width == 8, "{:?}", c.editor_warn);
+        }
+        let (on, warnings) = read_tab_char(Some("[editor]\ntab_char = \"yes\"\n"));
+        assert!(!on && warnings.len() == 1 && warnings[0].contains("tab_char"), "{warnings:?}");
+        assert_eq!(read_tab_char(Some("[editor]\ntab_width = \"wide\"\ntab_char = true\n")), (true, vec![]));
+        assert_eq!(read_tab_char(Some("[editor\n")), (false, vec![]));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
