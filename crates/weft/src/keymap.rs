@@ -198,6 +198,50 @@ mod tests {
         }
     }
 
+    /// 10.12: Each format key parses, is the key egui's event for it comes
+    /// back as (on JIS and on US), runs its command while editing, and takes
+    /// no key that weft keeps for itself or the keymap already binds.
+    #[test]
+    fn the_format_keys_run_their_commands_from_the_events_egui_sends() {
+        use egui::{Key as K, Modifiers as M};
+        let (k, warnings) = Keys::load(None);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let (ctrl, ctrl_shift) = (M::CTRL, M::CTRL | M::SHIFT);
+        // (the keymap's notation, the key egui reports, what is held, the command)
+        let keys = [
+            ("<C-b>", K::B, ctrl, "inline.bold"),
+            ("<C-i>", K::I, ctrl, "inline.italic"),
+            // JIS Ctrl+Shift+@, then US Ctrl+`.
+            ("<C-`>", K::Backtick, ctrl_shift, "inline.code"),
+            ("<C-`>", K::Backtick, ctrl, "inline.code"),
+            ("<C-k>", K::K, ctrl, "inline.link"),
+            ("<C-1>", K::Num1, ctrl, "heading.set_1"),
+            ("<C-2>", K::Num2, ctrl, "heading.set_2"),
+            ("<C-3>", K::Num3, ctrl, "heading.set_3"),
+            ("<C-4>", K::Num4, ctrl, "heading.set_4"),
+            ("<C-5>", K::Num5, ctrl, "heading.set_5"),
+            ("<C-6>", K::Num6, ctrl, "heading.set_6"),
+            // JIS Ctrl+@ and Ctrl+[ alike.
+            ("<C-[>", K::OpenBracket, ctrl, "block.fence"),
+            // Ctrl+Shift+] and Ctrl+Shift+[: the shift is in the symbol.
+            ("<C-}>", K::CloseCurlyBracket, ctrl_shift, "list.bullet"),
+            ("<C-}>", K::CloseCurlyBracket, ctrl, "list.bullet"),
+            ("<C-{>", K::OpenCurlyBracket, ctrl_shift, "list.number"),
+            ("<C-{>", K::OpenCurlyBracket, ctrl, "list.number"),
+        ];
+        for (on, key, mods, name) in keys {
+            let written = Key::parse(on).unwrap_or_else(|| panic!("{on} does not parse"));
+            let pressed = ito_keys::from_egui(key, &mods).unwrap_or_else(|| panic!("{key:?} with {mods:?} is no key"));
+            assert_eq!(pressed, written, "{key:?} with {mods:?} is not {on}");
+            assert!(matches!(k.resolve(&[pressed], true), Match::Exact(b) if b.run == [Cmd::Run(name)]), "{on} does not run {name}");
+            assert!(Keys::fixed(&[written]).is_none(), "{on} is one of weft's own keys");
+            let bound = Keys::built_in_layers().iter().flat_map(|(_, b)| b).filter(|b| b.on == [written]).count();
+            assert_eq!(bound, 1, "{on} is bound {bound} times");
+            assert_eq!(k.label(name), ito_keys::human_seq(&[written]), "the palette shows {name}'s key");
+        }
+        assert!(unbound().iter().any(|(_, r, _)| *r == "heading.clear"), "a heading's own key takes it off");
+    }
+
     #[test]
     fn the_built_in_layers_are_the_defaults_once() {
         let b = Keys::built_in_layers();

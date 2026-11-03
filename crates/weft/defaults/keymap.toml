@@ -222,3 +222,74 @@ desc = "Outdent the list item"
 on = "<C-CR>"
 run = "list.toggle_task"
 desc = "Toggle the task"
+
+# --- Formatting ---
+#
+# A shifted symbol is written as the symbol it types: `<C-{>` is Ctrl+Shift+[.
+# On a JIS keyboard Ctrl+Shift+@ arrives as `<C-`>` and Ctrl+@ as `<C-[>`.
+# Pressing a heading's key on a heading of that level makes it a paragraph.
+
+[[edit.keymap]]
+on = "<C-b>"
+run = "inline.bold"
+desc = "Toggle bold"
+
+[[edit.keymap]]
+on = "<C-i>"
+run = "inline.italic"
+desc = "Toggle italic"
+
+[[edit.keymap]]
+on = "<C-`>"
+run = "inline.code"
+desc = "Toggle inline code"
+
+[[edit.keymap]]
+on = "<C-k>"
+run = "inline.link"
+desc = "Toggle a link"
+
+[[edit.keymap]]
+on = "<C-1>"
+run = "heading.set_1"
+desc = "Toggle heading 1"
+
+[[edit.keymap]]
+on = "<C-2>"
+run = "heading.set_2"
+desc = "Toggle heading 2"
+
+[[edit.keymap]]
+on = "<C-3>"
+run = "heading.set_3"
+desc = "Toggle heading 3"
+
+[[edit.keymap]]
+on = "<C-4>"
+run = "heading.set_4"
+desc = "Toggle heading 4"
+
+[[edit.keymap]]
+on = "<C-5>"
+run = "heading.set_5"
+desc = "Toggle heading 5"
+
+[[edit.keymap]]
+on = "<C-6>"
+run = "heading.set_6"
+desc = "Toggle heading 6"
+
+[[edit.keymap]]
+on = "<C-[>"
+run = "block.fence"
+desc = "Toggle the code block"
+
+[[edit.keymap]]
+on = "<C-}>"
+run = "list.bullet"
+desc = "Toggle the bulleted list"
+
+[[edit.keymap]]
+on = "<C-{>"
+run = "list.number"
+desc = "Toggle the numbered list"
