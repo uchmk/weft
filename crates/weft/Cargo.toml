@@ -34,6 +34,9 @@ ito-keys = { git = "https://github.com/uchmk/ito", rev = "f58b51f", features = [
 ito-keymap = { git = "https://github.com/uchmk/ito", rev = "f58b51f" }
 # `--keys "<script>"`: the real window driven without a person.
 ito-keyscript = { git = "https://github.com/uchmk/ito", rev = "f58b51f" }
+# What a screen reader says: saved / could not save, a command that did
+# nothing here, the quit question (and what `--keys`' <Announced:> checks).
+ito-a11y = { git = "https://github.com/uchmk/ito", rev = "f58b51f", features = ["egui"] }
 # `?` / F1: the key help.
 ito-help = { git = "https://github.com/uchmk/ito", rev = "f58b51f" }
 # System notification, sound, webhook.

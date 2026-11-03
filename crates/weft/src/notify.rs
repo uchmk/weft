@@ -2,7 +2,7 @@
 //! ways `[notify]` in weft's config.toml picks (common-spec, "通知"): the
 //! system's notification with weft's icon, a sound, and the webhooks. And
 //! `[notify]` as the settings' Notifications page (`ito_prefs::notify_page`)
-//! shows it. (fude's notify.rs.)
+//! shows it. (fude's notify.rs; the click back as fumi's.)
 
 pub use ito_prefs::NotifyCfg;
 use serde::Deserialize;
@@ -40,11 +40,28 @@ fn icon(side: u32) -> Vec<u8> {
     crate::icon::pixels(side)
 }
 
-/// Tell of a save that failed in every way `n` turns on for it. A click on
-/// the system's notification (or its `open` button) brings the window
-/// forward; a newer failure's replaces the last.
-pub fn tell(n: &NotifyCfg, title: &str, body: &str, open: &str) {
-    n.tell_open(&EVENTS, APP, icon, "save_failed", title, body, "save_failed", open);
+/// Tell of a save that failed in every way `n` turns on for it. The system's
+/// notification carries `notice` (the bell's id for the same failure): a
+/// click on it (or its `open` button) brings the window forward
+/// (`set_window`) and hands the id back through `take_clicks`, so the app
+/// goes to the file the notice is about.
+pub fn tell(n: &NotifyCfg, title: &str, body: &str, notice: u64, open: &str) {
+    n.tell_open(&EVENTS, APP, icon, "save_failed", title, body, &notice.to_string(), open);
+}
+
+/// The window a click on a notification brings forward. Once is enough.
+pub fn set_window(ctx: &egui::Context) {
+    ito_prefs::notify_window(ctx);
+}
+
+/// The notices whose system notifications were clicked since the last call.
+pub fn take_clicks() -> Vec<u64> {
+    ids(ito_prefs::take_clicks())
+}
+
+/// The notice ids among the clicked tags (another tag is not weft's).
+fn ids(tags: Vec<String>) -> Vec<u64> {
+    tags.iter().filter_map(|t| t.parse().ok()).collect()
 }
 
 /// "Send a test", as the page sets things now: every way, or only the
@@ -76,6 +93,11 @@ sound_save_failed = \"boing\"
 ",
         ));
         assert_eq!(warn.len(), 1);
+    }
+
+    #[test]
+    fn a_click_hands_back_the_notice_id() {
+        assert_eq!(ids(vec!["3".into(), "save_failed".into(), "12".into()]), vec![3, 12]);
     }
 
     #[test]

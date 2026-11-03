@@ -7,17 +7,18 @@
 
 - [x] `--keys` の台本: `ito-keyscript` の `Runner`（`State`・`Shot`・`Theme`・`Lang`・`Read`・`Quit`）。`WEFT_KEYS_DONE` は `lanes.conf` の `keys_env` と同じ。
   状態のファイルは `screen`（main・settings・help）・`lang`・`page`・`palette`・`notices`。
-- [ ] `--keys` の残り: 状態・木・アナウンス（`<Enabled:>`・`<Focused:>`・`<Tree:名前>`・`<Announced:>` など）は、`ito-a11y` を入れていないので未配線。
-  アナウンスは `ito_a11y::announce` を使い、`ito-a11y` の `egui` の機能を入れる。通知は `Cargo.toml` の機能 `test-hooks`（`ito-notify/test-sink`）を入れたビルドで
-  `ITO_NOTIFY_SINK=<file>` に記録できる。出荷するビルドには入れない。編集の画面ができてから入れる。
+- [ ] `--keys` の残り: `ito-a11y`（`egui` の機能）を 0.2.4 で入れ、`<Announced:>` は TESTING 7.4 のテストで確かめた（保存・保存できない・元に戻すものが無い）。
+  `<Tree:名前>`・`<Focused:>`・`<Enabled:>` は accesskit から引けるはずだが、まだ確かめていない。通知は `Cargo.toml` の機能 `test-hooks`
+  （`ito-notify/test-sink`）を入れたビルドで `ITO_NOTIFY_SINK=<file>` に記録できる（TESTING 7.5）。出荷するビルドには入れない。
 - [x] `keymap.toml` と設定の「キー」ページ: `ito-keymap`・`ito-prefs` の `keys_page`。既定のキーは `defaults/keymap.toml`
   （`<C-,>` 設定・`<F1>` ヘルプ・`<C-q>` 終了）。keymap.toml には変えた分だけを書く。読めない行はベルに出す。
 - [x] F1 のヘルプ: `ito-help`。`?` は文字の入力に使うので割り当てない（設計の原則）。
 - [x] 通知と設定の「通知」ページ: ページ（`notify_page`、試しの通知）と、保存できなかったときの `notify::tell`（`take_files`）。
 - [x] 設定の画面: `ito_prefs::show`（一般・テーマ・キー・通知・詳細・情報）。`Ctrl+,` で開き、`Esc` で閉じる。
 - [x] 窓の場所を戻す: `window::Saved` で戻し、`Tracker::follow` で書き、`on_exit` で `Tracker::close`。
-- [ ] 通知を入れる: 設定・keymap.toml・テーマ・言語の読めなかったことはベルに `Kind::Warn` で入れる（`go` は `()`）。
-  `ito-notify` の `Toast::open` のトーストは、飛び先（開いているファイル）ができてから。
+- [x] 通知を入れる（0.2.4）: common.toml・テーマ・config.toml の `[notify]`・keymap.toml の読めなかったことは、ベルに `Kind::Warn` で 1 回だけ（直ってからまた壊れたら再び）。
+  通知は飛び先のファイルを持つ（`Notice<PathBuf>`）。窓が後ろのときの保存の失敗は ito-prefs の `tell_open`（tag は通知の番号）で出し、押すと窓が前に出て文書が前に来る。
+  別のエージェントが確かめた（verify 56 件、TESTING 5.4・5.5・7.3・7.4 はテスト、5.6・7.5 は人）。最小化した窓が戻らないのは ito-prefs の不具合（見つけた課題）。
 - [x] コマンドパレットの中身: 不具合の報告・拡大率を戻す・設定・キーのヘルプ・終了と、`commands::ALL` のうち `palette` のもの（保存・外部エディター・元に戻す・構造のコマンド）。キーは `ito-keymap` から引く。
 - [x] 字体: `ito-fonts` で日本語の字体を別スレッドで読み、`egui` に足す。
 - [x] `TESTING.md` に確認の行（起動・キーのヘルプ・設定・パレット・通知・拡大率・台本・編集・外部エディター）を足し、`cargo run --example make-testcheck` で `TESTING-CHECKS.md` を作った。
@@ -60,7 +61,8 @@
 - [x] 全角スペースと意図しないハード改行を控えめにハイライト（全角スペースは薄い枠、段落の中のハード改行になる行末の空白は薄い色と点。TESTING.md 8.10）。
 - [ ] 状態欄: 行・列、日本語の文字数、選択の文字数、保存状態、文字コード、改行コード、IME の状態（`ito-statusbar`）。
   IME のオン・オフと入力モードは uchmk/ito#166 で頼み、ito の v0.227.0（3f57ba3）で入った（`Ime::status(ctx) -> Option<Status>`、テスト用に `Ime::fake_status`）。
-  作業中の枝を取り込んだあと、ito の rev を c77aba9（v0.228.0。3f57ba3 を含む）に上げて状態欄に配線する。実際の IME での表示は weft の側で確かめる。
+  作業中の枝を取り込んだあと、ito の rev を 3ce9f13（v0.230.0。3f57ba3・c77aba9 を含む）に上げて状態欄に配線する。実際の IME での表示は weft の側で確かめる。
+  同じ rev で、文字数の数え方を `ito_textbuf::pos::count_chars`（#169、v0.229.0）に、桁区切りを `ito_common::text::grouped`（#168、v0.229.0）に置き換える。
 
 ### フェーズ 3 Markdown 操作（`ito-mdedit` を配線する）
 - [x] `block.move_up` / `block.move_down`（リストの項目は `move_item` で子の項目ごと 1 つ、それ以外は `move_block`。`Alt+↑` / `Alt+↓`）、節の移動（`move_section`、`Alt+Shift+↑` / `Alt+Shift+↓`）。
@@ -72,10 +74,17 @@
   枝 `wt/tab` で作り、別のエージェントが確かめた（verify 58 件が通る。設定の画面・IME の変換中・元に戻す・読み取り専用も確かめた）。
   ただし表で Tab を押すと、ito-mdedit の `table::render` が行の字下げと CRLF を落とす（リストの中の表がリストの外に出る、CRLF のファイルに LF が混ざる）。
   前から `table.format` にあった不具合だが、Tab で毎回起きるので uchmk/ito#170 が入るまで取り込まない。
+  #170（表の行頭と CRLF を保つ）と #171 は ito の v0.231.0（aef9deb）で入った。`wt/tab` を main に載せ替え、ito を aef9deb に上げて確かめ直している。
 - [ ] 見出しの折りたたみ（`heading.fold`）、目次の挿入・更新（`heading.insert_toc`）。
-  折りたたみは `ito-outline` の `section` を使う weft の表示。目次の挿入・更新は uchmk/ito#163 で頼んだ。
+  折りたたみは `ito-outline` の `section` を使う weft の表示。目次の挿入・更新は uchmk/ito#163 で頼み、v0.230.0（3ce9f13）の ito-mdedit `insert_toc` で入った。
 - [ ] 構造選択（単語 → 段落 → リスト → 節 → 親の節）、構造を壊さない削除、構造ナビゲーション、構造診断（lint）、集中表示。
-  構造選択・削除・ナビゲーションは uchmk/ito#163、lint は uchmk/ito#164 で頼んだ。集中表示は `ito-outline` の `section` を使う weft の表示。
+  構造選択・削除・ナビゲーションは uchmk/ito#163、lint は uchmk/ito#164 で頼み、v0.230.0（3ce9f13）で入った。
+  ito-mdedit の `expand_selection` / `shrink_selection`・`delete_heading`・`next` と、新しいクレート ito-mdlint（`lint` の `Finding` を `fix_all` で 1 つの `Change` にする）。
+  `shrink_selection` は状態を持たないので、広げた経路どおりに戻すには weft の側で選択のスタックを持つ。集中表示は `ito-outline` の `section` を使う weft の表示。
+- [ ] 書式のキー（2026-11-03 にユーザーが決めた）: 行内のコードは `Ctrl+``、コードの囲み（` ``` `）は `Ctrl+Shift+``。太字・斜体・取り消し線・リンク・見出し 1〜6・引用・
+  箇条書き・番号・タスクも名前つきのコマンドにする。どれも選択の範囲に効き（行ごとに包む、全部が済んでいれば外す）、1 回の元に戻すで戻る。
+  タスクは選択の範囲の項目をまとめてチェックするキーと、まとめて外すキーを持つ。中身（選択を受けて選択を返す、コードの中では何もしない、CRLF・字下げ・`>` を保つ）は
+  ito-mdedit に頼む。`Ctrl+Shift+X` は egui が切り取りとして取るので取り消し線には使えない。
 
 ### フェーズ 4 実用エディター
 - [ ] 自動保存・強制終了からの復元、外部変更の検知（`ito-watch`。未保存があれば差分を見せて選ばせる）。
@@ -102,7 +111,9 @@
   kura は `ito_openin::lines::line_arg` で行の渡し方を決める。組み込みの表に weft を足すのを uchmk/ito#165 で頼み、ito の v0.226.2（ceb61fd）で入った
   （`weft = joined("+", ":", false)`、列は文字数）。kura は rev を上げるだけ。
   weft の側は 0.2.3 で入った（`weft +行[:列] FILE`、列は文字数、範囲の外は端に寄せる。TESTING.md 9.4〜9.6 は自動、9.7 は人）。
-  残りは kura の側: ito-openin を ceb61fd 以降に上げることと、`.md` の opener を weft にすること。今の kura が行を渡すのはアウトラインの見出しだけで、列は渡さない。
+  kura は v0.139.55（9ae7ed9）で ito を ceb61fd に上げ、yazi.toml に weft の opener と `*.md use = ["weft","edit","open"]` を足した（kura のセッションの知らせ）。
+  weft が PATH に無いうちは kura が飛ばして nvim が開く。残りは weft.exe を PATH に入れること（`cargo install --path crates/weft`）と、TESTING 9.7 を人が確かめること。
+  今の kura が行を渡すのは目次（Enter）の見出しだけで、列を渡す開き方はまだ無い。
 
 ### その後（設計の「後回し」）
 - 数式（v2）・Mermaid（v2〜v3。ライブラリの選定は ito への crate-request の候補）、書き出し、動画、テンプレート、タスク・タグの一覧、
@@ -111,11 +122,19 @@
 ## 見つけた課題（ユーザーが認めるまで手をつけない）
 - 編集欄の等幅フォントで、全角の括弧・数字・英字（U+FF01〜FF5A）が egui の `emoji-icon-font` の字形で描かれる（日本語の書体を族の最後に足しているため）。
   全角スペース（U+3000）はメイリオから全角で出ている。また JetBrains Mono（0.6 em）に対し漢字は 1.0 em で 1.67 桁になり、`format_table` で整えた表が編集欄で揃わない。
-  字の並びを ito で一か所にまとめるのを uchmk/ito#167 で頼んだ（7 つのアプリが同じ処理を書いている）。入ったら `take_font` をそれに置き換える。
-- 文字数の桁区切り（`12,345`）の部品が ito-common に無いので uchmk/ito#168 で頼んだ（minato・kura に同じものがある）。状態欄は今は区切らずに出している。
-- 範囲の書記素を数える部品が ito-textbuf の `pos` に無いので uchmk/ito#169 で頼んだ。入ったら weft の `count::count` をそれに置き換える。
+  字の並びを ito で一か所にまとめるのを uchmk/ito#167 で頼み、v0.230.0（3ce9f13）の ito-fonts `load_in_background(ctx, mono)` で入った。rev を上げるときに `take_font` を置き換える。
+- 文字数の桁区切り（`12,345`）の部品が ito-common に無いので uchmk/ito#168 で頼み、v0.229.0 の `ito_common::text::grouped` で入った。rev を上げるときに状態欄で使う。
+- 範囲の書記素を数える部品が ito-textbuf の `pos` に無いので uchmk/ito#169 で頼み、v0.229.0 の `pos::count_chars` で入った。rev を上げるときに weft の `count::count` を置き換える。
 - ito-mdedit のリストの操作が、コードの囲みの中の `- x` を項目として扱う。番号つきの項目を字下げしても番号を振り直さない（CommonMark ではリストでなくなる）。
-  タブで字下げした項目を項目と見ない。uchmk/ito#171 で頼んだ（`list.indent` と Tab の両方に効く）。
+  タブで字下げした項目を項目と見ない。uchmk/ito#171 で頼み、v0.231.0（aef9deb）で直った（コードの中では `None`、字下げ・字上げで番号を振り直す、タブの字下げも項目と見る）。
+  `list.indent` と Tab の両方に効く。
 - 複数行の選択にリストの項目が入っていると、Tab の働きが選択の終わりの行で決まる（終わりが項目ならその項目だけ字下げ、段落なら全部の行に空白）。
   選択の全部の行を字下げするか、どう揃えるかはユーザーが決める（TESTING 8.11 の文言も合わせる）。
 - 設定の画面でタブの幅を素早く 2 回変えると、書き込みのスレッドの順で古い値が残りうる（`prefs.rs` の `tab_width_edit`。`notify_edit` も同じ作り。コードを読んだだけ）。
+- 最小化した窓で、保存できなかった通知を押しても窓が戻らない（ito-prefs の `notify_cfg.rs` が `ViewportCommand::Focus` だけを送る。`Minimized(false)` が要る）。
+  eframe 0.36.2 だけの小さな再現でも確かめた。fumi・michi・fude も同じ作り。ito に頼む。
+- 通知の残り（低）: 言語の誤りと `prefs.failed` は 1 回だけの知らせ（`news()`）を通らない。保存の失敗のトーストは失敗のたびに 1 つずつ積もる。
+  トーストの本文にパスが 2 回出る（前から）。TESTING-CHECKS の人の行が 〔未訳〕（`scripts/testcheck-ja.toml` が無い）。
+- ito-outline の `headings` が見出しごとに先頭から行を数えるので、文書の大きさの 2 乗で遅い（8 MB で 4.6 秒、行の多い文章では 71 秒。行数を続けて数えれば 21〜63 ms）。
+  画面は待たないが、編集のあと状態欄の数が数秒「…」と古い数のまま。ito に頼む。
+- 読み取りが追いついていない間、選択の文字数は「…」なのに、文書の文字数は古い数のまま印が無い（TESTING 8.12 では設計どおりとしている）。
