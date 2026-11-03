@@ -57,23 +57,27 @@
 - [ ] `ito-ime` の統合。確定の前後でカーソルと選択を保つ。
   変換中の文字をカーソルの所に出す・確定を入れる・候補の窓をカーソルに寄せる・変換中のキーをキーマップに渡さない、までは `src/view.rs` で配線済み。
 - [ ] 入力の優先順位（IME → 補完 → キーマップ → コマンド）。変換中は補完を開かない、確定の Enter をコマンドにしない。
-- [ ] 全角スペースと意図しないハード改行を控えめにハイライト。
+- [x] 全角スペースと意図しないハード改行を控えめにハイライト（全角スペースは薄い枠、段落の中のハード改行になる行末の空白は薄い色と点。TESTING.md 8.10）。
 - [ ] 状態欄: 行・列、日本語の文字数、選択の文字数、保存状態、文字コード、改行コード、IME の状態（`ito-statusbar`）。
+  IME のオン・オフと入力モードを読む手段が `ito-ime` に無いので uchmk/ito#166 で頼んだ（今は「変換中」だけ出せる）。
 
 ### フェーズ 3 Markdown 操作（`ito-mdedit` を配線する）
 - [x] `block.move_up` / `block.move_down`（リストの項目は `move_item` で子の項目ごと 1 つ、それ以外は `move_block`。`Alt+↑` / `Alt+↓`）、節の移動（`move_section`、`Alt+Shift+↑` / `Alt+Shift+↓`）。
 - [x] `section.promote` / `section.demote`（`promote_section` / `demote_section`。子孫の見出しごと。`Alt+Shift+←` / `Alt+Shift+→`）。
 - [x] リストの階層（`indent_item` / `outdent_item`、`Alt+→` / `Alt+←`）、`list.toggle_task`（`toggle_task`、`Ctrl+Enter`）、番号の振り直し（`renumber`、パレットから）。
 - [ ] `table.format`（`format_table`。全角は 2 セル幅）、`table.next_cell`（`next_cell`、Tab / Shift+Tab）。
-  コマンドとパレットには入れた。Tab / Shift+Tab は表の中だけで効くように割り当てる所が残っている（表の外の Tab をどうするかと一緒に決める）。
+  コマンドとパレットには入れた。Tab / Shift+Tab の割り当てが残っている。決めたこと（2026-11-03）: 表の中はセルの移動、リストの項目では字下げ・戻し（`indent_item` / `outdent_item`）、
+  それ以外では Tab が空白を入れ、Shift+Tab が行頭の空白を戻す。空白の数は設定で選べる（既定は 4）。
 - [ ] 見出しの折りたたみ（`heading.fold`）、目次の挿入・更新（`heading.insert_toc`）。
+  折りたたみは `ito-outline` の `section` を使う weft の表示。目次の挿入・更新は uchmk/ito#163 で頼んだ。
 - [ ] 構造選択（単語 → 段落 → リスト → 節 → 親の節）、構造を壊さない削除、構造ナビゲーション、構造診断（lint）、集中表示。
-  `ito-mdedit` に無いので、要る形が決まったら ito に頼む（アプリに書かない）。
+  構造選択・削除・ナビゲーションは uchmk/ito#163、lint は uchmk/ito#164 で頼んだ。集中表示は `ito-outline` の `section` を使う weft の表示。
 
 ### フェーズ 4 実用エディター
 - [ ] 自動保存・強制終了からの復元、外部変更の検知（`ito-watch`。未保存があれば差分を見せて選ばせる）。
 - [ ] 画像の貼り付け（添付フォルダー `assets/` へ WebP、日時＋連番、ハッシュで重複を再利用、1 回の元に戻すでファイルもゴミ箱へ）。
-  非可逆 WebP の手段は ito・kura を調べてから。無ければ ito に頼む。
+  非可逆 WebP の手段は ito・kura に無かった（kura は `image` で読むだけ、`image` の書き出しは可逆のみ。クリップボードの画像を読む部品も無い）。
+  uchmk/ito#162 で頼んだ（クリップボードの画像を読む・非可逆 WebP に書く）。入るまで待つ。
 - [ ] 貼り付けの賢さ（選択に URL → `[選択](URL)`、HTML・表 → Markdown）。
 - [ ] 右に整形プレビュー（`ito-mdview`）、原文にミニマップ（`ito-minimap`）、目次（`ito-outline`）、位置の同期。
 - [ ] ガターの変更表示（`ito-diff`、変更の周りだけ計算）。
@@ -90,7 +94,17 @@
 
 ### kura との接続
 - [ ] kura の opener で `.md` に Enter → weft が開き、`+N` の行指定が効く。
+  kura は `ito_openin::lines::line_arg` で行の渡し方を決める。組み込みの表に weft を足すのを uchmk/ito#165 で頼み、ito の v0.226.2（ceb61fd）で入った
+  （`weft = joined("+", ":", false)`、列は文字数）。kura は rev を上げるだけ。
+  weft の側（`+行` / `+行:列` を受け付ける）は作業中。kura の `.md` の opener を weft にするのは kura の側。
 
 ### その後（設計の「後回し」）
 - 数式（v2）・Mermaid（v2〜v3。ライブラリの選定は ito への crate-request の候補）、書き出し、動画、テンプレート、タスク・タグの一覧、
   日本語の整形ルール、見出しのナンバリング、ライブプレビューを作るかの判断。
+
+## 見つけた課題（ユーザーが認めるまで手をつけない）
+- 編集欄の等幅フォントで、全角の括弧・数字・英字（U+FF01〜FF5A）が egui の `emoji-icon-font` の字形で描かれる（日本語の書体を族の最後に足しているため）。
+  全角スペース（U+3000）はメイリオから全角で出ている。また JetBrains Mono（0.6 em）に対し漢字は 1.0 em で 1.67 桁になり、`format_table` で整えた表が編集欄で揃わない。
+  字の並びを ito で一か所にまとめるのを uchmk/ito#167 で頼んだ（7 つのアプリが同じ処理を書いている）。入ったら `take_font` をそれに置き換える。
+- 文字数の桁区切り（`12,345`）の部品が ito-common に無いので uchmk/ito#168 で頼んだ（minato・kura に同じものがある）。状態欄は今は区切らずに出している。
+- 範囲の書記素を数える部品が ito-textbuf の `pos` に無いので uchmk/ito#169 で頼んだ。入ったら weft の `count::count` をそれに置き換える。
