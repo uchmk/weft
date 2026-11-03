@@ -135,12 +135,18 @@ fn motion(name: &str, page: usize) -> Option<(Motion, bool)> {
 /// something (moved, changed), `Some(false)` when it does not apply here (no
 /// table at the caret, nothing to undo, a read-only file), `None` when `name`
 /// is not a document command (the app runs those). Every edit is one undo
-/// step: a command ends the typing step before it.
+/// step: a command ends the typing step before it. Backspace and Delete are
+/// keys like typing: the ones in a row join into one step.
 pub fn edit(ed: &mut Editor, name: &str, now_ms: u64, page: usize) -> Option<bool> {
     if let Some((m, extend)) = motion(name, page) {
         let before = ed.selection();
         ed.move_caret(m, extend);
         return Some(ed.selection() != before);
+    }
+    match name {
+        "edit.backspace" => return Some(ed.backspace(now_ms)),
+        "edit.delete" => return Some(ed.delete(now_ms)),
+        _ => {}
     }
     ed.seal();
     let done = match name {
@@ -150,11 +156,13 @@ pub fn edit(ed: &mut Editor, name: &str, now_ms: u64, page: usize) -> Option<boo
         }
         "edit.undo" => ed.undo(),
         "edit.redo" => ed.redo(),
-        "edit.backspace" => ed.backspace(),
-        "edit.delete" => ed.delete(),
         "edit.newline" => ed.newline(now_ms),
-        "block.move_up" => ed.structure(|t, b| ito_mdedit::move_block(t, b, Dir::Up)),
-        "block.move_down" => ed.structure(|t, b| ito_mdedit::move_block(t, b, Dir::Down)),
+        // A list item moves past its sibling; the first or last item of a
+        // list, and anything else, moves as a block.
+        "block.move_up" => ed.structure(|t, b| ito_mdedit::move_item(t, b, Dir::Up).or_else(|| ito_mdedit::move_block(t, b, Dir::Up))),
+        "block.move_down" => {
+            ed.structure(|t, b| ito_mdedit::move_item(t, b, Dir::Down).or_else(|| ito_mdedit::move_block(t, b, Dir::Down)))
+        }
         "section.move_up" => ed.structure(|t, b| ito_mdedit::move_section(t, b, Dir::Up)),
         "section.move_down" => ed.structure(|t, b| ito_mdedit::move_section(t, b, Dir::Down)),
         "section.promote" => ed.structure(ito_mdedit::promote_section),
@@ -203,7 +211,6 @@ mod tests {
 
     #[test]
     fn moves_select_and_structure_commands_are_one_step_each() {
-        // A list is one block to ito-mdedit: it moves past the paragraph whole.
         let mut ed = Editor::new("- a\n- b\n\nc\n");
         assert_eq!(edit(&mut ed, "select.right", 0, 10), Some(true));
         assert_eq!(ed.selected_text().as_deref(), Some("-"));
@@ -212,7 +219,11 @@ mod tests {
         assert_eq!(edit(&mut ed, "list.toggle_task", 0, 10), Some(true));
         assert_eq!(ed.text(), "- [ ] a\n- b\n\nc\n");
         assert_eq!(edit(&mut ed, "block.move_down", 0, 10), Some(true));
-        assert_eq!(ed.text(), "c\n\n- [ ] a\n- b\n");
+        assert_eq!(ed.text(), "- b\n- [ ] a\n\nc\n", "an item moves past its sibling");
+        assert_eq!(edit(&mut ed, "block.move_down", 0, 10), Some(true));
+        assert_eq!(ed.text(), "c\n\n- b\n- [ ] a\n", "the last item takes the list past the paragraph");
+        assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- b\n- [ ] a\n\nc\n");
         assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(true));
         assert_eq!(ed.text(), "- [ ] a\n- b\n\nc\n");
         assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(true));
@@ -220,6 +231,36 @@ mod tests {
         assert_eq!(edit(&mut ed, "edit.redo", 0, 10), Some(true));
         assert_eq!(ed.text(), "- [ ] a\n- b\n\nc\n");
         assert_eq!(edit(&mut ed, "table.format", 0, 10), Some(false), "no table here");
+    }
+
+    #[test]
+    fn a_list_item_moves_with_its_children_and_keeps_the_numbers() {
+        let mut ed = Editor::new("- a\n  - a1\n- b\n");
+        assert_eq!(edit(&mut ed, "block.move_down", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- b\n- a\n  - a1\n");
+        assert_eq!(&ed.text()[ed.caret()..], "- a\n  - a1\n", "the caret goes with the item");
+        let mut ed = Editor::new("1. one\n2. two\n");
+        ed.set_caret("1. one\n".len(), false);
+        assert_eq!(edit(&mut ed, "block.move_up", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. two\n2. one\n");
+    }
+
+    #[test]
+    fn backspaces_in_a_row_are_one_step_and_a_command_ends_them() {
+        let mut ed = Editor::new("abcd");
+        ed.set_caret(4, false);
+        assert_eq!(edit(&mut ed, "edit.backspace", 0, 10), Some(true));
+        assert_eq!(edit(&mut ed, "edit.backspace", 100, 10), Some(true));
+        assert_eq!(ed.text(), "ab");
+        assert_eq!(edit(&mut ed, "edit.undo", 200, 10), Some(true));
+        assert_eq!(ed.text(), "abcd", "both come back as one");
+        ed.set_caret(4, false);
+        edit(&mut ed, "edit.backspace", 300, 10);
+        assert_eq!(edit(&mut ed, "table.format", 400, 10), Some(false), "a command that does nothing still ends the run");
+        edit(&mut ed, "edit.backspace", 500, 10);
+        assert_eq!(ed.text(), "ab");
+        edit(&mut ed, "edit.undo", 600, 10);
+        assert_eq!(ed.text(), "abc", "a command between them splits the run");
     }
 
     #[test]

@@ -132,7 +132,7 @@ impl View {
                         }
                     }
                     Event::Cut => {
-                        if let Some(s) = ed.cut() {
+                        if let Some(s) = ed.cut(now_ms) {
                             ui.ctx().copy_text(s);
                             changed = true;
                         }
@@ -144,7 +144,7 @@ impl View {
         }
 
         let text = ed.text();
-        let total = pos::line_count(text);
+        let total = ed.line_count();
         let digits = total.to_string().len().max(2);
         let gutter = digits as f32 * char_w + 2.0 * PAD;
         let text_rect = Rect::from_min_max(pos2(rect.left() + gutter, rect.top()), rect.max);
@@ -158,7 +158,7 @@ impl View {
                 self.scroll -= d;
             }
         }
-        let caret_line = pos::line_of(text, ed.caret());
+        let caret_line = ed.line_of(ed.caret());
         if self.follow {
             let top = caret_line as f32 * row_h;
             if top < self.scroll.y {
@@ -177,7 +177,7 @@ impl View {
         let plain = TextFormat::simple(font.clone(), c.fg);
         let ime_format = TextFormat { background: c.selection(), underline: Stroke::new(1.0, c.fg), ..plain.clone() };
         let mut lines: Vec<Line> = Vec::with_capacity(count);
-        let mut start = pos::line_range(text, first).map_or(text.len(), |r| r.start);
+        let mut start = ed.line_range(first).map_or(text.len(), |r| r.start);
         for n in first..(first + count).min(total) {
             let (end, brk, next) = match text[start..].find('\n') {
                 Some(i) => {
@@ -231,7 +231,7 @@ impl View {
         // --- Painting.
         let text = ed.text();
         let caret = ed.caret();
-        let caret_line = pos::line_of(text, caret);
+        let caret_line = ed.line_of(caret);
         let sel = ed.selection().range();
         let gutter_painter = ui.painter_at(rect);
         let painter = ui.painter_at(text_rect);

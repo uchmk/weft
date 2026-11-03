@@ -644,7 +644,7 @@ impl App {
                 ed.locked().is_some(),
                 line + 1,
                 col + 1,
-                ito_textbuf::pos::line_count(ed.text()),
+                ed.line_count(),
             ));
             // The text on one line, as Rust writes a string, cut short.
             let text: String = ed.text().escape_debug().take(400).collect();
@@ -656,10 +656,7 @@ impl App {
     /// The title of the section the caret is in, by the newest reading.
     fn section(&self) -> Option<String> {
         let (ed, tree) = (self.editor.as_ref()?, self.tree.as_ref()?);
-        // A section's range ends where the text does, so a caret at the very
-        // end is asked about as the byte before it (until uchmk/ito#161).
-        let at = ed.caret().min(ed.text().len().saturating_sub(1));
-        let i = ito_outline::at_byte(&tree.headings, at)?;
+        let i = ito_outline::at_byte(&tree.headings, ed.caret())?;
         Some(tree.headings[i].title.clone())
     }
 
@@ -1301,6 +1298,18 @@ mod tests {
         }
         let quit = entries.iter().find(|e| matches!(e.pick, Command::Run("quit"))).unwrap();
         assert_eq!(quit.key, "Ctrl+Q");
+    }
+
+    /// The status bar names the section the caret is in, at the very end of
+    /// the text too.
+    #[test]
+    fn the_section_is_found_with_the_caret_at_the_end() {
+        let mut app = App::for_tests();
+        let mut ed = engine::Editor::new("# One\n\na\n\n## Two\n\nb");
+        ed.set_caret(ed.text().len(), false);
+        app.tree = Some(structure::read(ed.version(), ed.text()));
+        app.editor = Some(ed);
+        assert_eq!(app.section().as_deref(), Some("Two"));
     }
 
     /// 8.6: Quitting with changes not saved asks first; Esc stays, N goes

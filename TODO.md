@@ -47,10 +47,11 @@
 - [x] 改行コード・BOM を読んだまま保存（一時ファイル → 置き換え。ファイルのスレッドで書く）。UTF-8 以外は警告して読み取り専用で開く（変換はしない）。
 - [x] 1 キーで `$EDITOR` へ（`Ctrl+E`、`ito_openin::Config::open_file_at` に行・列。未保存なら先に保存）。列は uchmk/ito#158 で ito に入った（745ccb1）。
 - [x] 未保存の変更があるときの終了は `ito-confirm` で聞く（やめる・保存せずに終了・保存して終了）。保存が済んでから閉じる。
-- [ ] ito に頼んだもの（入れば weft の回り道を外す）:
-  - uchmk/ito#159 `ito-textbuf`: 行の索引（今の `pos` の行の関数は O(n)）、元に戻すで保存した所に戻ったら未保存でなくなる印、続けて消した文字を 1 歩にまとめる。
-  - uchmk/ito#160 `ito-mdedit`: リストの項目 1 つだけを上下に動かす（今の `move_block` はリスト全体を動かす）。
-  - uchmk/ito#161 `ito-outline`: `at_byte` が本文の末尾のカーソルを取りこぼす（weft は 1 バイト前で聞いて回避）。
+- [x] ito に頼んだもの（ito の f58b51f で入り、weft の回り道を外した）:
+  - uchmk/ito#159 `ito-textbuf`: 行の索引（`Buffer::line_of`・`line_range`・`line_col`・`byte_at`）、元に戻すで保存した所に戻ったら未保存でなくなる（`Doc::mark_saved`・`is_dirty`）、
+    続けて消した文字を 1 歩にまとめる（`Doc::deleted`）。
+  - uchmk/ito#160 `ito-mdedit`: リストの項目 1 つだけを上下に動かす（`move_item`。リストの端では `move_block` に任せる）。
+  - uchmk/ito#161 `ito-outline`: `at_byte` が本文の末尾のカーソルも拾う（1 バイト前で聞く回避を外した）。
 
 ### フェーズ 2 日本語特化
 - [ ] `ito-ime` の統合。確定の前後でカーソルと選択を保つ。
@@ -60,7 +61,7 @@
 - [ ] 状態欄: 行・列、日本語の文字数、選択の文字数、保存状態、文字コード、改行コード、IME の状態（`ito-statusbar`）。
 
 ### フェーズ 3 Markdown 操作（`ito-mdedit` を配線する）
-- [x] `block.move_up` / `block.move_down`（`move_block`、`Alt+↑` / `Alt+↓`）、節の移動（`move_section`、`Alt+Shift+↑` / `Alt+Shift+↓`）。リストの項目 1 つは uchmk/ito#160 待ち。
+- [x] `block.move_up` / `block.move_down`（リストの項目は `move_item` で子の項目ごと 1 つ、それ以外は `move_block`。`Alt+↑` / `Alt+↓`）、節の移動（`move_section`、`Alt+Shift+↑` / `Alt+Shift+↓`）。
 - [x] `section.promote` / `section.demote`（`promote_section` / `demote_section`。子孫の見出しごと。`Alt+Shift+←` / `Alt+Shift+→`）。
 - [x] リストの階層（`indent_item` / `outdent_item`、`Alt+→` / `Alt+←`）、`list.toggle_task`（`toggle_task`、`Ctrl+Enter`）、番号の振り直し（`renumber`、パレットから）。
 - [ ] `table.format`（`format_table`。全角は 2 セル幅）、`table.next_cell`（`next_cell`、Tab / Shift+Tab）。

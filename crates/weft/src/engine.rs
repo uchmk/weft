@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use ito_mdedit::Change;
-use ito_textbuf::{pos, Doc, Edit, Selection, Transaction};
+use ito_textbuf::{pos, Doc, Selection, Transaction};
 
 /// A caret move. `PageUp` / `PageDown` carry how many lines a page is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,7 +39,8 @@ pub struct SaveJob {
     pub path: PathBuf,
     /// The BOM it was read with, then the text (its line endings as read).
     pub bytes: String,
-    /// The version written: the document is clean while it stays there.
+    /// The version written: the save marks the document clean only if it is
+    /// still at this version when the write lands.
     pub version: u64,
 }
 
@@ -54,10 +55,6 @@ pub enum NoSave {
 pub struct Editor {
     doc: Doc,
     path: Option<PathBuf>,
-    /// The version last written or read. Until ito-textbuf keeps a saved mark
-    /// (one that undo and redo move back to), undoing back to the saved text
-    /// still counts as changed.
-    saved_version: u64,
     locked: Option<Locked>,
     /// The column (in graphemes) up and down aim for, kept over short lines.
     goal: Option<usize>,
@@ -66,9 +63,7 @@ pub struct Editor {
 impl Editor {
     /// A document of `text` with no file behind it.
     pub fn new(text: &str) -> Editor {
-        let doc = Doc::new(text);
-        let saved_version = doc.version();
-        Editor { doc, path: None, saved_version, locked: None, goal: None }
+        Editor { doc: Doc::new(text), path: None, locked: None, goal: None }
     }
 
     /// Read `path`. A file that is not there yet opens empty (saving creates
@@ -106,8 +101,14 @@ impl Editor {
     pub fn locked(&self) -> Option<Locked> {
         self.locked
     }
+    /// Whether the text differs from the file: undo back to what was saved
+    /// is clean again.
     pub fn is_dirty(&self) -> bool {
-        self.doc.version() != self.saved_version
+        self.doc.is_dirty()
+    }
+    /// How many lines the text has.
+    pub fn line_count(&self) -> usize {
+        self.doc.buffer().line_count()
     }
     /// The line endings and BOM it was read with, for the status bar.
     pub fn eol(&self) -> ito_textbuf::Eol {
@@ -119,7 +120,16 @@ impl Editor {
 
     /// The caret's line and column (graphemes), both from 0.
     pub fn line_col(&self) -> (usize, usize) {
-        pos::line_col(self.text(), self.caret())
+        self.doc.buffer().line_col(self.caret())
+    }
+
+    /// The line (from 0) holding `byte`.
+    pub fn line_of(&self, byte: usize) -> usize {
+        self.doc.buffer().line_of(byte)
+    }
+    /// The bytes of line `line` without its break; `None` past the last line.
+    pub fn line_range(&self, line: usize) -> Option<std::ops::Range<usize>> {
+        self.doc.buffer().line_range(line)
     }
 
     /// The caret as `$EDITOR` takes it: the line and the column from 1, the
@@ -128,8 +138,8 @@ impl Editor {
     pub fn editor_pos(&self) -> ito_openin::Pos {
         let text = self.text();
         let at = self.caret();
-        let line = pos::line_of(text, at);
-        let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+        let line = self.line_of(at);
+        let start = self.line_range(line).map_or(0, |r| r.start);
         let chars = pos::char_of_byte(&text[start..], at - start);
         ito_openin::Pos::new(line + 1, ito_openin::Col::new(chars + 1, at - start + 1))
     }
@@ -162,11 +172,8 @@ impl Editor {
             Motion::Right if !extend && !sel.is_empty() => sel.range().end,
             Motion::Left => pos::prev_grapheme(text, head).unwrap_or(0),
             Motion::Right => pos::next_grapheme(text, head).unwrap_or(text.len()),
-            Motion::LineStart => text[..head].rfind('\n').map_or(0, |i| i + 1),
-            Motion::LineEnd => {
-                let line = pos::line_of(text, head);
-                pos::line_range(text, line).map_or(text.len(), |r| r.end)
-            }
+            Motion::LineStart => self.line_range(self.line_of(head)).map_or(0, |r| r.start),
+            Motion::LineEnd => self.line_range(self.line_of(head)).map_or(text.len(), |r| r.end),
             Motion::DocStart => 0,
             Motion::DocEnd => text.len(),
             Motion::Up => self.vertical(-1),
@@ -176,7 +183,7 @@ impl Editor {
         };
         if vertical {
             if self.goal.is_none() {
-                self.goal = Some(pos::line_col(self.text(), head).1);
+                self.goal = Some(self.doc.buffer().line_col(head).1);
             }
         } else {
             self.goal = None;
@@ -188,18 +195,18 @@ impl Editor {
     /// Where `lines` lines down (up when negative) lands, at the goal column.
     /// Past the first line is the start of the text, past the last its end.
     fn vertical(&self, lines: isize) -> usize {
-        let text = self.text();
-        let (line, col) = pos::line_col(text, self.caret());
+        let buf = self.doc.buffer();
+        let (line, col) = buf.line_col(self.caret());
         let goal = self.goal.unwrap_or(col);
         let target = line as isize + lines;
         if target < 0 {
             return 0;
         }
         let target = target as usize;
-        if target >= pos::line_count(text) {
-            return text.len();
+        if target >= buf.line_count() {
+            return buf.len();
         }
-        pos::byte_at(text, target, goal)
+        buf.byte_at(target, goal)
     }
 
     // ------------------------------------------------------------ editing
@@ -247,7 +254,9 @@ impl Editor {
     }
 
     /// Delete the selection, or the grapheme before the caret (a CRLF is one).
-    pub fn backspace(&mut self) -> bool {
+    /// Backspaces one after another (within a second, each where the last
+    /// stopped) are one undo step.
+    pub fn backspace(&mut self, now_ms: u64) -> bool {
         let sel = self.doc.selection();
         let range = if sel.is_empty() {
             match pos::prev_grapheme(self.text(), sel.head) {
@@ -257,11 +266,12 @@ impl Editor {
         } else {
             sel.range()
         };
-        self.delete_range(range)
+        self.delete_range(range, now_ms)
     }
 
-    /// Delete the selection, or the grapheme after the caret.
-    pub fn delete(&mut self) -> bool {
+    /// Delete the selection, or the grapheme after the caret. Deletes one
+    /// after another are one undo step, as Backspaces are.
+    pub fn delete(&mut self, now_ms: u64) -> bool {
         let sel = self.doc.selection();
         let range = if sel.is_empty() {
             match pos::next_grapheme(self.text(), sel.head) {
@@ -271,18 +281,17 @@ impl Editor {
         } else {
             sel.range()
         };
-        self.delete_range(range)
+        self.delete_range(range, now_ms)
     }
 
-    fn delete_range(&mut self, range: std::ops::Range<usize>) -> bool {
+    /// A selection deleted is a step of its own; a grapheme joins the run of
+    /// Backspaces or Deletes before it.
+    fn delete_range(&mut self, range: std::ops::Range<usize>, now_ms: u64) -> bool {
         if !self.writable() || range.is_empty() {
             return false;
         }
         self.goal = None;
-        let before = self.doc.selection();
-        let at = range.start;
-        let tx = Transaction::new(vec![Edit { range, text: String::new() }], before, Selection::caret(at));
-        self.doc.apply(tx).is_ok()
+        self.doc.deleted(range, now_ms).is_ok()
     }
 
     /// The selected text, for Copy.
@@ -291,13 +300,13 @@ impl Editor {
         (!sel.is_empty()).then(|| self.text()[sel.range()].to_owned())
     }
 
-    /// Take the selection out, for Cut.
-    pub fn cut(&mut self) -> Option<String> {
+    /// Take the selection out, for Cut: an undo step of its own.
+    pub fn cut(&mut self, now_ms: u64) -> Option<String> {
         if !self.writable() {
             return None;
         }
         let taken = self.selected_text()?;
-        self.delete_range(self.doc.selection().range()).then_some(taken)
+        self.delete_range(self.doc.selection().range(), now_ms).then_some(taken)
     }
 
     /// Run a structure command of ito-mdedit at the caret, as one undo step.
@@ -338,9 +347,13 @@ impl Editor {
         Ok(SaveJob { path, bytes: self.doc.buffer().saved(), version: self.doc.version() })
     }
 
-    /// A save of `version` reached the disk.
+    /// A save of `version` reached the disk. It marks the text clean only when
+    /// nothing changed while it was written; otherwise what is on screen is
+    /// not what the file holds, and it stays changed until the next save.
     pub fn saved(&mut self, version: u64) {
-        self.saved_version = version;
+        if self.doc.version() == version {
+            self.doc.mark_saved();
+        }
     }
 }
 
@@ -382,14 +395,39 @@ mod tests {
         let mut e = at("x👨‍👩‍👧\r\ny", 0);
         let end_of_family = "x👨‍👩‍👧".len();
         e.set_caret(end_of_family, false);
-        assert!(e.backspace());
+        assert!(e.backspace(0));
         assert_eq!(e.text(), "x\r\ny");
-        assert!(e.delete());
+        assert!(e.delete(10));
         assert_eq!(e.text(), "xy", "the CRLF goes as one");
         assert!(e.undo());
+        assert_eq!(e.text(), "x\r\ny", "a Delete does not join the Backspace before it");
         assert!(e.undo());
         assert_eq!(e.text(), "x👨‍👩‍👧\r\ny");
-        assert!(!at("", 0).backspace());
+        assert!(!at("", 0).backspace(0));
+    }
+
+    #[test]
+    fn backspaces_in_a_row_are_one_step_until_a_pause() {
+        let mut e = at("日本語abc", "日本語abc".len());
+        for t in [0, 100, 200] {
+            assert!(e.backspace(t));
+        }
+        assert_eq!(e.text(), "日本語");
+        assert!(e.backspace(5000), "after a pause, a new step");
+        assert_eq!(e.text(), "日本");
+        assert!(e.undo());
+        assert_eq!(e.text(), "日本語");
+        assert!(e.undo());
+        assert_eq!(e.text(), "日本語abc", "the three Backspaces come back as one");
+        let mut e = at("abcd", 0);
+        assert!(e.delete(0));
+        assert!(e.delete(100));
+        e.seal();
+        assert!(e.delete(200), "a seal (a command) ends the run");
+        assert_eq!(e.text(), "d");
+        assert!(e.undo());
+        assert!(e.undo());
+        assert_eq!(e.text(), "abcd");
     }
 
     #[test]
@@ -457,7 +495,7 @@ mod tests {
         let mut e = at("日本語", 0);
         e.move_caret(Motion::Right, true);
         assert_eq!(e.selected_text().as_deref(), Some("日"));
-        assert_eq!(e.cut().as_deref(), Some("日"));
+        assert_eq!(e.cut(0).as_deref(), Some("日"));
         assert_eq!(e.text(), "本語");
         e.select_all();
         assert_eq!(e.selected_text().as_deref(), Some("本語"));
@@ -489,16 +527,43 @@ mod tests {
     }
 
     #[test]
-    fn dirty_follows_the_version_and_a_save_job_keeps_bom_and_crlf() {
+    fn dirty_follows_undo_to_the_save_and_a_save_job_keeps_bom_and_crlf() {
         let mut e = Editor::new("\u{feff}a\r\nb");
         assert!(!e.is_dirty());
         assert_eq!(e.save_job().err(), Some(NoSave::NoPath));
         e.path = Some(PathBuf::from("x.md"));
         e.set_caret(e.text().len(), false);
-        e.newline(0);
+        e.insert("x", 0);
         assert!(e.is_dirty());
+        assert!(e.undo());
+        assert!(!e.is_dirty(), "undo back to the text as read is clean");
+        assert!(e.redo());
+        e.newline(0);
         let job = e.save_job().expect("a job");
-        assert_eq!(job.bytes, "\u{feff}a\r\nb\r\n");
+        assert_eq!(job.bytes, "\u{feff}a\r\nbx\r\n");
+        e.saved(job.version);
+        assert!(!e.is_dirty());
+        e.insert("y", 10);
+        assert!(e.is_dirty());
+        assert!(e.undo());
+        assert!(!e.is_dirty(), "undo back to the saved text is clean");
+        assert!(e.undo());
+        assert!(e.is_dirty(), "undo past the save is not");
+        assert!(e.redo());
+        assert!(!e.is_dirty());
+    }
+
+    #[test]
+    fn a_save_that_lands_after_an_edit_leaves_the_text_changed() {
+        let mut e = Editor::new("a");
+        e.path = Some(PathBuf::from("x.md"));
+        e.set_caret(1, false);
+        e.insert("b", 0);
+        let job = e.save_job().expect("a job");
+        e.insert("c", 5000);
+        e.saved(job.version);
+        assert!(e.is_dirty(), "the file has ab, the window abc");
+        let job = e.save_job().expect("a job");
         e.saved(job.version);
         assert!(!e.is_dirty());
     }
