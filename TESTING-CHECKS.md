@@ -1,6 +1,6 @@
 # Checklist
 
-61 checks in TESTING.md, 47 left for a person.
+74 checks in TESTING.md, 49 left for a person.
 
 ## 1. Start
 
@@ -39,7 +39,7 @@
 
 自動テスト済みなので下には出していない: 4.2
 
-- [ ] **4.1** Press `Ctrl+Shift+P`, or click the palette field in the title bar → The palette lists Report a problem, Reset the scale, Settings, Key help, Quit, Save, the external editor, Undo, Redo, Select all and the block, section, list and table commands; not the caret's moves 〔未訳〕
+- [ ] **4.1** Press `Ctrl+Shift+P`, or click the palette field in the title bar → The palette lists Report a problem, Reset the scale, Settings, Key help, Quit, Save, the external editor, Undo, Redo, Select all, the block, section, list and table commands and the format commands of section 10; not the caret's moves 〔未訳〕
 - [ ] **4.3** Type `set` and press `Enter` → The settings open 〔未訳〕
 - [ ] **4.4** Press `Esc` with the palette open → The palette closes and nothing runs 〔未訳〕
 
@@ -91,3 +91,10 @@
 - [ ] **9.2** Press `Ctrl+E` with an editor that does not exist in `[open]` → The bell says the external editor could not be opened 〔未訳〕
 - [ ] **9.3** Run `weft FILE.md --keys "<C-End>x<State:typed><Quit>"` with `WEFT_KEYS_DONE` set → The state `typed` says `file`, `dirty: true`, `locked: false`, `caret` (line:column), `section` (the heading the caret is under), `lines`, `chars` (the characters, line breaks left out), `selected_chars`, `text` and `quit: no` 〔未訳〕
 - [ ] **9.7** In kura, with weft as the `.md` opener, open a `.md` at a line (a heading in kura's outline; kura needs ito-openin at ceb61fd or later) → weft opens it with the caret on that line (and column, when kura passes one) 〔未訳〕
+
+## 10. Formatting
+
+自動テスト済みなので下には出していない: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9, 10.10, 10.12
+
+- [ ] **10.11** Put the caret in a word and run "Toggle italic", "Toggle inline code" and "Toggle strikethrough" (each again to take it off); select a word and run "Toggle a link" → The word gets `*…*`, `` `…` `` and `~~…~~` with their colours; the link is `[word]()` with the caret between the parentheses, ready for the address 〔未訳〕
+- [ ] **10.13** On a JIS keyboard, with the IME off, select a word and press `Ctrl+B`, `Ctrl+I`, `Ctrl+Shift+@` and `Ctrl+K` (each but the link twice); press `Ctrl+2` twice on a line, `Ctrl+@` over two lines, `Ctrl+Shift+]` and `Ctrl+Shift+[` over two lines; then the same on a US keyboard with `` Ctrl+` `` and `Ctrl+[`; open the key help (`F1`) and the palette → Each key does what its command does in 10.1–10.11 (the second `Ctrl+2` makes the line a paragraph again) and types nothing; the key help and the palette list each key by its command 〔未訳〕

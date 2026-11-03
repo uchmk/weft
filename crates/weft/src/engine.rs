@@ -8,8 +8,10 @@
 
 use std::path::{Path, PathBuf};
 
-use ito_mdedit::Change;
-use ito_textbuf::{pos, Doc, Selection, Transaction};
+use std::ops::Range;
+
+use ito_mdedit::{Change, SelChange};
+use ito_textbuf::{pos, Doc, Edit, Selection, Transaction};
 
 /// A caret move. `PageUp` / `PageDown` carry how many lines a page is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,12 +60,15 @@ pub struct Editor {
     locked: Option<Locked>,
     /// The column (in graphemes) up and down aim for, kept over short lines.
     goal: Option<usize>,
+    /// The last format command put emphasis markers where CommonMark may not
+    /// read them as emphasis (next to punctuation); the app says so once.
+    unflanked: bool,
 }
 
 impl Editor {
     /// A document of `text` with no file behind it.
     pub fn new(text: &str) -> Editor {
-        Editor { doc: Doc::new(text), path: None, locked: None, goal: None }
+        Editor { doc: Doc::new(text), path: None, locked: None, goal: None, unflanked: false }
     }
 
     /// Read `path`. A file that is not there yet opens empty (saving creates
@@ -333,6 +338,33 @@ impl Editor {
         let Some(change) = command(self.text(), before.head) else { return false };
         self.goal = None;
         self.doc.apply(Transaction::from_change(&change, before)).is_ok()
+    }
+
+    /// Run a format command of ito-mdedit over the selection (the caret as an
+    /// empty range), as one undo step that leaves the selection where the
+    /// command says, in the direction it had. `false` when it does not apply
+    /// here (inside a code block, say); nothing is recorded then.
+    pub fn format(&mut self, command: impl FnOnce(&str, Range<usize>) -> Option<SelChange>) -> bool {
+        if !self.writable() {
+            return false;
+        }
+        let before = self.doc.selection();
+        let text = self.text();
+        let r = before.range();
+        let Some(sc) = command(text, pos::floor(text, r.start)..pos::floor(text, r.end)) else { return false };
+        let (start, end) = (sc.selection.start, sc.selection.end);
+        let after =
+            if before.head < before.anchor { Selection { anchor: end, head: start } } else { Selection { anchor: start, head: end } };
+        self.goal = None;
+        let done = self.doc.apply(Transaction::new(vec![Edit::from(&sc.change)], before, after)).is_ok();
+        self.unflanked = done && sc.unflanked;
+        done
+    }
+
+    /// Whether the last format command left markers that may not show as
+    /// emphasis; asking clears it.
+    pub fn take_unflanked(&mut self) -> bool {
+        std::mem::take(&mut self.unflanked)
     }
 
     pub fn undo(&mut self) -> bool {

@@ -91,7 +91,12 @@
   箇条書き・番号・タスクも名前つきのコマンドにする。どれも選択の範囲に効き（行ごとに包む、全部が済んでいれば外す）、1 回の元に戻すで戻る。
   タスクは選択の範囲の項目をまとめてチェックするキーと、まとめて外すキーを持つ。中身（選択を受けて選択を返す、コードの中では何もしない、CRLF・字下げ・`>` を保つ）は
   uchmk/ito#174 で ito-mdedit に頼み、ito の v0.232.0（10f9abe）の `format`（`inline`・`line_type`・`check_tasks` / `uncheck_tasks` / `toggle_tasks`、`SelChange`）で入った。
-  枝 `wt/format` でコマンドとして配線中（キーはまだ割り当てない）。
+  0.2.7 で名前つきのコマンド（`inline.bold` / `italic` / `code` / `strike` / `link`・`heading.set_1`〜`6`・`heading.clear`・`block.quote` / `fence`・
+  `list.bullet` / `number` / `task`・`list.check_tasks` / `uncheck_tasks`）と Ctrl のキーが入った。`Ctrl+Enter` は選択の全部のタスクを切り替える。
+  CommonMark で効かない強調（`unflanked`）は状態欄に出して読み上げる。別のエージェントが本物の egui のキーの出来事で JIS・US の両方を通し、
+  1 回の `Ctrl+Z` で全部戻ることも確かめた（verify 86 件）。ただし TESTING 10.12 のテストはキーの解決（`from_egui` → `resolve`）までで、
+  `read_keys` を通して文書が変わるかは見ていない。`ito_keys::read` に替えるときに、本物のキーの出来事から文書の変化までを見るテストにする。
+  残りは Alt のキー（引用・タスク・取り消し線・まとめてチェック／外す）。今はパレットからだけ呼べる。
   キーの決まっていないもの: ユーザーは日本語配列で、`` ` `` は `Shift+@` でしか打てない（`Ctrl+Alt+`` も同じ理由で不可）。どのキーにするかは実機で届き方を確かめてから決める（ユーザーの選んだ案）。
   実機（日本語配列 HKL 0x04110411、eframe 0.36.2・ito-keys aef9deb、スキャンコードで送った。ログは scratchpad の `keyprobe`）で確かめたこと:
   `Ctrl+Shift+@`（JIS で打つ「Ctrl+`」）は `<C-`>`。`Ctrl+@` と `Ctrl+[` はどちらも `<C-[>`。`<C-S-`>` は何を押しても届かない（ito-keys が記号の Shift を落とす）。
@@ -104,7 +109,7 @@
   決めたキー（2026-11-03、ユーザーが推奨の案を選んだ）: 行内のコード `Ctrl+Shift+@`（`<C-`>`）、コードの囲み `Ctrl+@`（`<C-[>`。`Ctrl+[` も同じ）、
   太字・斜体・リンク `Ctrl+B` / `Ctrl+I` / `Ctrl+K`、見出し 1〜6 `Ctrl+1`〜`6`（同じ見出しでもう一度押すと段落）、番号・箇条書き `Ctrl+Shift+[` / `Ctrl+Shift+]`（`<C-{>` / `<C-}>`）、
   引用 `Alt+Q`、タスク `Alt+T`、取り消し線 `Alt+Shift+5`（`<A-5>`）、まとめてチェック・外す `Alt+X` / `Alt+Shift+X`。`list.toggle_task` は `Ctrl+Enter` のまま。
-  Ctrl のキーは `wt/format` で割り当てる。Alt のキーは ito を v0.234.0 に上げて `ito_keys::read` に替えてから割り当てる。
+  Ctrl のキーは 0.2.7 で割り当てた。Alt のキーは ito を v0.234.0 に上げて `ito_keys::read` に替えてから割り当てる。
 
 ### フェーズ 4 実用エディター
 - [ ] 自動保存・強制終了からの復元、外部変更の検知（`ito-watch`。未保存があれば差分を見せて選ばせる）。
