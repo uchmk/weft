@@ -155,6 +155,20 @@ impl Editor {
         self.goal = None;
     }
 
+    /// Put the caret at `line`, `col`, both from 1, the column in characters
+    /// (`+LINE:COL` as kura's opener passes it, counted as ito-openin's
+    /// `Col::in_line` counts). A line past the end is the last line, a column
+    /// past the line's end is its end (before the break), and a column inside
+    /// a grapheme cluster (`👍🏽`) goes back to the cluster's start.
+    pub fn go_to(&mut self, line: usize, col: usize) {
+        let text = self.text();
+        let line = line.saturating_sub(1).min(self.line_count() - 1);
+        let r = self.line_range(line).unwrap_or(text.len()..text.len());
+        let b = r.start + pos::byte_of_char(&text[r], col.saturating_sub(1));
+        let b = pos::next_grapheme(text, b).and_then(|n| pos::prev_grapheme(text, n)).unwrap_or(b);
+        self.set_caret(b, false);
+    }
+
     pub fn select_all(&mut self) {
         self.doc.set_selection(Selection { anchor: 0, head: self.text().len() });
         self.goal = None;
@@ -524,6 +538,32 @@ mod tests {
         let col = p.col.expect("a column");
         assert_eq!(col.chars, 3);
         assert_eq!(col.bytes, 7);
+    }
+
+    #[test]
+    fn go_to_takes_the_line_and_a_char_column_from_one_and_clamps_them() {
+        let mut e = Editor::new("# t\r\n漢字👍🏽x\r\nend");
+        e.go_to(2, 3);
+        assert_eq!(&e.text()[e.caret()..], "👍🏽x\r\nend", "漢字 are two chars, not six bytes");
+        e.go_to(2, 4);
+        assert_eq!(&e.text()[e.caret()..], "👍🏽x\r\nend", "inside 👍🏽 (two chars) goes to its start");
+        e.go_to(2, 5);
+        assert_eq!(&e.text()[e.caret()..], "x\r\nend");
+        assert_eq!(e.line_col(), (1, 3), "the status counts graphemes: 👍🏽 is one");
+        let p = e.editor_pos();
+        e.go_to(1, 1);
+        assert_eq!(e.caret(), 0);
+        e.go_to(p.line, p.col.expect("a column").chars);
+        assert_eq!(&e.text()[e.caret()..], "x\r\nend", "the caret $EDITOR gets comes back");
+        e.go_to(2, 99);
+        assert_eq!(e.caret(), "# t\r\n漢字👍🏽x".len(), "past the line's end is its end, before the CRLF");
+        e.go_to(1, 99);
+        assert_eq!(e.caret(), 3, "never inside the CRLF");
+        e.go_to(99, 2);
+        assert_eq!(&e.text()[e.caret()..], "nd", "past the last line is the last line");
+        let mut e = Editor::new("");
+        e.go_to(5, 5);
+        assert_eq!(e.caret(), 0, "an empty file has its one line");
     }
 
     #[test]

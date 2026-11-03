@@ -71,6 +71,8 @@ impl Line {
 pub struct View {
     /// How far the text is scrolled, in points (x to the left, y down).
     scroll: Vec2,
+    /// The row height `scroll` was measured in (0 before the first frame).
+    row_h: f32,
     /// How many lines a page moves: what fit last frame, less one.
     page: usize,
     /// Bring the caret into view next frame (it moved or the text changed).
@@ -82,7 +84,14 @@ pub struct View {
 
 impl Default for View {
     fn default() -> View {
-        View { scroll: Vec2::ZERO, page: 20, follow: true, caret_rect: Rect::NOTHING, ime: ito_ime::Ime::new(Id::new("weft-editor")) }
+        View {
+            scroll: Vec2::ZERO,
+            row_h: 0.0,
+            page: 20,
+            follow: true,
+            caret_rect: Rect::NOTHING,
+            ime: ito_ime::Ime::new(Id::new("weft-editor")),
+        }
     }
 }
 
@@ -105,6 +114,13 @@ impl View {
         let c = ito_theme::colors();
         let font = FontId::monospace(SIZE);
         let (row_h, char_w) = ui.ctx().fonts_mut(|f| (f.row_height(&font), f.glyph_width(&font, '0')));
+        // A new face (the fonts come in after the first frame) keeps the same
+        // line at the top and the caret in view: a `+LINE` far down stays shown.
+        if self.row_h > 0.0 && self.row_h != row_h {
+            self.scroll.y *= row_h / self.row_h;
+            self.follow = true;
+        }
+        self.row_h = row_h;
 
         // --- What was typed.
         let mut preedit = String::new();
@@ -322,6 +338,34 @@ mod tests {
 
     fn texts(job: &LayoutJob) -> Vec<&str> {
         job.sections.iter().map(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0]).collect()
+    }
+
+    /// 9.5: A caret far down (`+5000`) is in view on the first frame, and
+    /// stays in view when a face with another row height comes in (the fonts
+    /// load after the first frame).
+    #[test]
+    fn a_far_caret_is_in_view_on_the_first_frame_and_after_the_face_changes() {
+        let ctx = egui::Context::default();
+        let input = || egui::RawInput { screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))), ..Default::default() };
+        let shown = |v: &View| {
+            let top = 4999.0 * v.row_h;
+            top >= v.scroll.y && top + v.row_h <= v.scroll.y + 600.0
+        };
+        let mut ed = Editor::new(&"line\n".repeat(6000));
+        ed.go_to(5000, 1);
+        let mut view = View::default();
+        let mut frame = |view: &mut View| ctx.run_ui(input(), |ui| view.show(ui, &mut ed, None, false, 0)).drop_without_applying_deltas();
+        frame(&mut view);
+        assert!(shown(&view), "line 5000 at {} with the view at {}", 4999.0 * view.row_h, view.scroll.y);
+        // Another face: egui's own proportional one, a little lower than its monospace.
+        let before = view.row_h;
+        let mut fonts = egui::FontDefinitions::default();
+        let face = fonts.families[&egui::FontFamily::Proportional].clone();
+        fonts.families.insert(egui::FontFamily::Monospace, face);
+        ctx.set_fonts(fonts);
+        frame(&mut view);
+        assert_ne!(view.row_h, before, "the test needs a face of another height");
+        assert!(shown(&view), "line 5000 at {} with the view at {}", 4999.0 * view.row_h, view.scroll.y);
     }
 
     #[test]

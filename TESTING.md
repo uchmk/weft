@@ -92,3 +92,7 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 | 9.1 | Put the caret on line 3, column 5 and press `Ctrl+E` (with changes not saved) | The file is saved first, then the editor `[open]` names opens it at line 3, column 5 (at the line only, for an editor that takes no column) |
 | 9.2 | Press `Ctrl+E` with an editor that does not exist in `[open]` | The bell says the external editor could not be opened |
 | 9.3 | Run `weft FILE.md --keys "<C-End>x<State:typed><Quit>"` with `WEFT_KEYS_DONE` set | The state `typed` says `file`, `dirty: true`, `locked: false`, `caret` (line:column), `section` (the heading the caret is under), `lines`, `text` and `quit: no` |
+| 9.4 | Run `weft +3:5 FILE.md --keys "<State:at><Quit>"` (and `weft FILE.md +3:5 …`) with `WEFT_KEYS_DONE` set | The state `at` says `caret: 3:5`; `+40` on a shorter file puts the caret on the last line |
+| 9.5 | Run `weft +5000 LONG.md` on a file of more than 5000 lines | The caret's line is in view from the first frame, without scrolling, and stays in view when the Japanese font comes in |
+| 9.6 | Run `weft + FILE.md`, `weft +0 FILE.md`, `weft +x FILE.md`, `weft +3: FILE.md` | Each says ``bad position `…`: give +LINE or +LINE:COL, both from 1`` and does not start |
+| 9.7 | In kura, with weft as the `.md` opener, open a `.md` at a line (a search hit) | weft opens it with the caret on that line (and column, when kura passes one) |
