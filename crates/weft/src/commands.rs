@@ -4,8 +4,10 @@
 //! work on the document; it has no UI, so the tests, `--keys` and the keys
 //! reach the same code.
 
+use std::ops::Range;
+
 use crate::engine::{Editor, Motion};
-use ito_mdedit::{Dir, Step};
+use ito_mdedit::{Dir, Inline, Line, SelChange, Step};
 
 /// The keymap layer a command is bound in. `Edit` keys work only while the
 /// document has the keys (not in a dialog); `App` keys work everywhere.
@@ -94,6 +96,25 @@ pub const ALL: &[Def] = &[
     doc("table.format", "Format the table"),
     doc("table.next_cell", "To the next cell"),
     doc("table.prev_cell", "To the previous cell"),
+    doc("inline.bold", "Toggle bold"),
+    doc("inline.italic", "Toggle italic"),
+    doc("inline.code", "Toggle inline code"),
+    doc("inline.strike", "Toggle strikethrough"),
+    doc("inline.link", "Toggle a link"),
+    doc("heading.set_1", "Toggle heading 1"),
+    doc("heading.set_2", "Toggle heading 2"),
+    doc("heading.set_3", "Toggle heading 3"),
+    doc("heading.set_4", "Toggle heading 4"),
+    doc("heading.set_5", "Toggle heading 5"),
+    doc("heading.set_6", "Toggle heading 6"),
+    doc("heading.clear", "Turn the headings into paragraphs"),
+    doc("block.quote", "Toggle the quote"),
+    doc("block.fence", "Toggle the code block"),
+    doc("list.bullet", "Toggle the bulleted list"),
+    doc("list.number", "Toggle the numbered list"),
+    doc("list.task", "Toggle the task list"),
+    doc("list.check_tasks", "Check the selected tasks"),
+    doc("list.uncheck_tasks", "Uncheck the selected tasks"),
 ];
 
 /// The command named `name`.
@@ -129,6 +150,49 @@ fn motion(name: &str, page: usize) -> Option<(Motion, bool)> {
         _ => return None,
     };
     Some((m, extend))
+}
+
+/// A format command of ito-mdedit: an inline markup or a line type.
+#[derive(Clone, Copy)]
+enum Format {
+    Inline(Inline),
+    Line(Line),
+}
+
+impl Format {
+    fn run(self, text: &str, sel: Range<usize>) -> Option<SelChange> {
+        match self {
+            Format::Inline(k) => ito_mdedit::inline(text, sel, k),
+            Format::Line(k) => ito_mdedit::line_type(text, sel, k),
+        }
+    }
+}
+
+/// The format command `name` runs (`inline.*`, `heading.set_N`,
+/// `heading.clear`, `block.quote`, `block.fence`, and the list types).
+fn format(name: &str) -> Option<Format> {
+    let f = match name {
+        "inline.bold" => Format::Inline(Inline::Bold),
+        "inline.italic" => Format::Inline(Inline::Italic),
+        "inline.code" => Format::Inline(Inline::Code),
+        "inline.strike" => Format::Inline(Inline::Strike),
+        "inline.link" => Format::Inline(Inline::Link),
+        // Heading N on lines that are all heading N makes them paragraphs.
+        "heading.set_1" => Format::Line(Line::Heading(1)),
+        "heading.set_2" => Format::Line(Line::Heading(2)),
+        "heading.set_3" => Format::Line(Line::Heading(3)),
+        "heading.set_4" => Format::Line(Line::Heading(4)),
+        "heading.set_5" => Format::Line(Line::Heading(5)),
+        "heading.set_6" => Format::Line(Line::Heading(6)),
+        "heading.clear" => Format::Line(Line::Heading(0)),
+        "block.quote" => Format::Line(Line::Quote),
+        "block.fence" => Format::Line(Line::Fence),
+        "list.bullet" => Format::Line(Line::Bullet),
+        "list.number" => Format::Line(Line::Number),
+        "list.task" => Format::Line(Line::Task),
+        _ => return None,
+    };
+    Some(f)
 }
 
 /// Run the document command `name` on `ed`. `Some(true)` when it did
@@ -169,12 +233,21 @@ pub fn edit(ed: &mut Editor, name: &str, now_ms: u64, page: usize) -> Option<boo
         "section.demote" => ed.structure(ito_mdedit::demote_section),
         "list.indent" => ed.structure(ito_mdedit::indent_item),
         "list.outdent" => ed.structure(ito_mdedit::outdent_item),
-        "list.toggle_task" => ed.structure(ito_mdedit::toggle_task),
+        // A caret flips the box of its line (or gives a plain item one); a
+        // selection checks every task it touches, or unchecks them when all
+        // are checked, and falls back to the caret's line without a task.
+        "list.toggle_task" if ed.selection().is_empty() => ed.structure(ito_mdedit::toggle_task),
+        "list.toggle_task" => ed.format(ito_mdedit::toggle_tasks) || ed.structure(ito_mdedit::toggle_task),
         "list.renumber" => ed.structure(ito_mdedit::renumber),
         "table.format" => ed.structure(ito_mdedit::format_table),
         "table.next_cell" => ed.structure(|t, b| ito_mdedit::next_cell(t, b, Step::Next)),
         "table.prev_cell" => ed.structure(|t, b| ito_mdedit::next_cell(t, b, Step::Prev)),
-        _ => return None,
+        "list.check_tasks" => ed.format(ito_mdedit::check_tasks),
+        "list.uncheck_tasks" => ed.format(ito_mdedit::uncheck_tasks),
+        _ => {
+            let f = format(name)?;
+            ed.format(|t, s| f.run(t, s))
+        }
     };
     // Typing after a command starts a new step.
     ed.seal();
@@ -184,6 +257,7 @@ pub fn edit(ed: &mut Editor, name: &str, now_ms: u64, page: usize) -> Option<boo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ito_textbuf::Selection;
 
     #[test]
     fn names_are_object_dot_action_and_unique() {
@@ -274,5 +348,222 @@ mod tests {
         assert_eq!(ed.text(), "a\n", "the b is a step of its own");
         edit(&mut ed, "edit.undo", 30, 10);
         assert_eq!(ed.text(), "a", "the break is a step of its own");
+    }
+
+    /// An editor over `text` with `anchor..head` selected (the caret at `head`).
+    fn selected(text: &str, anchor: usize, head: usize) -> Editor {
+        let mut ed = Editor::new(text);
+        ed.set_caret(anchor, false);
+        ed.set_caret(head, true);
+        ed
+    }
+
+    /// 10.1: Bold over three list items marks each item's text, not its
+    /// marker, and keeps the same text selected; a second run takes the marks
+    /// off again.
+    #[test]
+    fn bold_over_list_items_marks_each_and_a_second_run_takes_it_off() {
+        let text = "- a\n- b\n- c\n";
+        let mut ed = selected(text, 0, "- a\n- b\n- c".len());
+        assert_eq!(edit(&mut ed, "inline.bold", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- **a**\n- **b**\n- **c**\n");
+        assert_eq!(ed.selected_text().as_deref(), Some("a**\n- **b**\n- **c"));
+        let sel = ed.selection();
+        assert!(sel.anchor < sel.head, "the caret stays at the end it was at: {sel:?}");
+        assert_eq!(edit(&mut ed, "inline.bold", 0, 10), Some(true));
+        assert_eq!(ed.text(), text);
+        assert_eq!(ed.selected_text().as_deref(), Some("a\n- b\n- c"));
+    }
+
+    /// 10.2: A format command is one undo step: one undo gives back the text
+    /// and the selection it ran on (in its direction), and redo the new text
+    /// with its selection.
+    #[test]
+    fn one_undo_takes_back_a_format_command_with_its_selection() {
+        let text = "one\ntwo\n";
+        // Selected backwards: the caret at the start.
+        let mut ed = selected(text, "one\ntwo".len(), 0);
+        let before = ed.selection();
+        assert_eq!(edit(&mut ed, "list.number", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. one\n2. two\n");
+        let after = ed.selection();
+        assert!(after.head < after.anchor, "still selected backwards: {after:?}");
+        assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(true));
+        assert_eq!(ed.text(), text);
+        assert_eq!(ed.selection(), before);
+        assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(false), "it was one step");
+        assert_eq!(edit(&mut ed, "edit.redo", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. one\n2. two\n");
+        assert_eq!(ed.selection(), after);
+    }
+
+    /// 10.3: Heading 3 on a paragraph makes it one; heading 1 changes the
+    /// level; heading 1 again makes it a paragraph, the caret in its word all
+    /// along. "Turn the headings into paragraphs" takes any level off and
+    /// does nothing to a paragraph.
+    #[test]
+    fn a_heading_level_changes_and_comes_back() {
+        let mut ed = Editor::new("Title\n\nbody\n");
+        ed.set_caret(2, false);
+        assert_eq!(edit(&mut ed, "heading.set_3", 0, 10), Some(true));
+        assert_eq!(ed.text(), "### Title\n\nbody\n");
+        assert_eq!(ed.caret(), "### Ti".len());
+        assert_eq!(edit(&mut ed, "heading.set_1", 0, 10), Some(true));
+        assert_eq!(ed.text(), "# Title\n\nbody\n");
+        assert_eq!(ed.caret(), "# Ti".len());
+        assert_eq!(edit(&mut ed, "heading.set_1", 0, 10), Some(true));
+        assert_eq!(ed.text(), "Title\n\nbody\n", "the same level again is a paragraph");
+        assert_eq!(ed.caret(), 2);
+        assert_eq!(edit(&mut ed, "heading.clear", 0, 10), Some(false), "a paragraph already");
+        assert_eq!(edit(&mut ed, "heading.set_6", 0, 10), Some(true));
+        assert_eq!(ed.text(), "###### Title\n\nbody\n");
+        assert_eq!(edit(&mut ed, "heading.clear", 0, 10), Some(true));
+        assert_eq!(ed.text(), "Title\n\nbody\n");
+    }
+
+    /// 10.4: Quote over lines with a blank one between marks every line (the
+    /// blank one with a bare `>`, so they stay one quote); again takes it off.
+    #[test]
+    fn a_quote_over_several_lines_and_off_again() {
+        let text = "a\n\nb\n";
+        let mut ed = selected(text, 0, "a\n\nb".len());
+        assert_eq!(edit(&mut ed, "block.quote", 0, 10), Some(true));
+        assert_eq!(ed.text(), "> a\n>\n> b\n");
+        assert_eq!(ed.selected_text().as_deref(), Some("> a\n>\n> b"));
+        assert_eq!(edit(&mut ed, "block.quote", 0, 10), Some(true));
+        assert_eq!(ed.text(), text);
+        assert_eq!(ed.selected_text().as_deref(), Some("a\n\nb"));
+    }
+
+    /// 10.5: Code block wraps the selected lines in a fence; run with the
+    /// selection (or the caret) inside a fence, it takes the fence off.
+    #[test]
+    fn a_fence_wraps_the_lines_and_comes_off_again() {
+        let text = "a\nb\n";
+        let mut ed = selected(text, 0, "a\nb".len());
+        assert_eq!(edit(&mut ed, "block.fence", 0, 10), Some(true));
+        assert_eq!(ed.text(), "```\na\nb\n```\n");
+        assert_eq!(ed.selected_text().as_deref(), Some("a\nb"));
+        assert_eq!(edit(&mut ed, "block.fence", 0, 10), Some(true));
+        assert_eq!(ed.text(), text);
+        assert_eq!(ed.selected_text().as_deref(), Some("a\nb"));
+        let mut ed = Editor::new("```rust\nfn main() {}\n```\n");
+        ed.set_caret("```rust\nfn".len(), false);
+        assert_eq!(edit(&mut ed, "block.fence", 0, 10), Some(true));
+        assert_eq!(ed.text(), "fn main() {}\n");
+        assert_eq!(ed.caret(), "fn".len());
+    }
+
+    /// 10.6: Check and uncheck the selected tasks touch only the tasks (a
+    /// plain item and a paragraph stay) and do nothing when nothing would
+    /// change; Toggle the task over a selection checks them all, then
+    /// unchecks them all, and with the caret alone flips its own line.
+    #[test]
+    fn tasks_are_checked_and_unchecked_over_a_selection() {
+        let text = "- [ ] a\n- [x] b\n- plain\n- [ ] c\n\nnote\n";
+        let checked = "- [x] a\n- [x] b\n- plain\n- [x] c\n\nnote\n";
+        let unchecked = "- [ ] a\n- [ ] b\n- plain\n- [ ] c\n\nnote\n";
+        let all = Selection { anchor: 0, head: text.len() - 1 };
+        let mut ed = selected(text, all.anchor, all.head);
+        assert_eq!(edit(&mut ed, "list.check_tasks", 0, 10), Some(true));
+        assert_eq!(ed.text(), checked);
+        assert_eq!(edit(&mut ed, "list.check_tasks", 0, 10), Some(false), "all checked already");
+        assert_eq!(edit(&mut ed, "list.uncheck_tasks", 0, 10), Some(true));
+        assert_eq!(ed.text(), unchecked);
+        assert_eq!(edit(&mut ed, "list.uncheck_tasks", 0, 10), Some(false), "none checked");
+        assert_eq!(ed.selection(), all, "a box is as long either way: the selection stays");
+        assert_eq!(edit(&mut ed, "list.toggle_task", 0, 10), Some(true));
+        assert_eq!(ed.text(), checked);
+        assert_eq!(edit(&mut ed, "list.toggle_task", 0, 10), Some(true));
+        assert_eq!(ed.text(), unchecked);
+        ed.set_caret("- [ ] a\n- [ ] b\n- pl".len(), false);
+        assert_eq!(edit(&mut ed, "list.toggle_task", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- [ ] a\n- [ ] b\n- [ ] plain\n- [ ] c\n\nnote\n", "a plain item gets a box");
+        // A selection with no task in it works on the caret's line.
+        let mut ed = selected("- a\n- b\n", 0, "- a\n- b".len());
+        assert_eq!(edit(&mut ed, "list.toggle_task", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- a\n- [ ] b\n");
+    }
+
+    /// 10.7: Bulleted, numbered and task list make the selected lines that
+    /// list (from another kind too); the same kind again makes them plain.
+    #[test]
+    fn lines_become_each_kind_of_list_and_plain_again() {
+        let text = "a\nb\n";
+        let mut ed = selected(text, 0, "a\nb".len());
+        assert_eq!(edit(&mut ed, "list.bullet", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- a\n- b\n");
+        assert_eq!(edit(&mut ed, "list.number", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. a\n2. b\n");
+        assert_eq!(edit(&mut ed, "list.task", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- [ ] a\n- [ ] b\n");
+        assert_eq!(edit(&mut ed, "list.task", 0, 10), Some(true));
+        assert_eq!(ed.text(), text);
+    }
+
+    /// 10.8: A CRLF file stays CRLF through the format commands, inline and
+    /// by line.
+    #[test]
+    fn format_commands_keep_crlf() {
+        let text = "- a\r\n- b\r\n";
+        let mut ed = selected(text, 0, "- a\r\n- b".len());
+        assert_eq!(edit(&mut ed, "inline.bold", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- **a**\r\n- **b**\r\n");
+        assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(true));
+        assert_eq!(edit(&mut ed, "list.number", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. a\r\n2. b\r\n");
+        assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(true));
+        assert_eq!(edit(&mut ed, "block.fence", 0, 10), Some(true));
+        assert_eq!(ed.text(), "```\r\n- a\r\n- b\r\n```\r\n");
+        assert_eq!(edit(&mut ed, "block.fence", 0, 10), Some(true));
+        assert_eq!(ed.text(), text);
+        assert_eq!(ed.eol(), ito_textbuf::Eol::Crlf);
+    }
+
+    /// 10.9: Inside a code block the format commands change nothing and leave
+    /// no undo step behind; on a read-only file they change nothing either.
+    #[test]
+    fn nothing_happens_inside_code_or_on_a_read_only_file() {
+        let text = "```\n- [ ] foo\n```\n";
+        let mut ed = Editor::new(text);
+        ed.set_caret("```\n- [ ] f".len(), false);
+        for name in ["inline.bold", "inline.code", "heading.set_1", "heading.clear", "block.quote", "list.bullet", "list.check_tasks"] {
+            assert_eq!(edit(&mut ed, name, 0, 10), Some(false), "{name}");
+            assert_eq!(ed.text(), text, "{name}");
+        }
+        assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(false), "no empty step");
+
+        let dir = std::env::temp_dir().join(format!("weft-format-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bad = dir.join("sjis.md");
+        std::fs::write(&bad, b"\x82\xa0abc\n").unwrap();
+        let mut ed = Editor::open(&bad).unwrap();
+        let read = ed.text().to_owned();
+        ed.select_all();
+        for name in ["inline.bold", "heading.set_1", "block.fence", "list.task", "list.toggle_task"] {
+            assert_eq!(edit(&mut ed, name, 0, 10), Some(false), "{name}");
+            assert_eq!(ed.text(), read, "{name}");
+        }
+        assert!(!ed.take_unflanked());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 10.10: Bold that lands next to punctuation (`**「強調」**です`) goes in,
+    /// and the editor raises the notice for the app once; taking it off
+    /// raises none.
+    #[test]
+    fn bold_next_to_punctuation_raises_the_notice_once() {
+        let mut ed = selected("「強調」です", 0, "「強調」".len());
+        assert_eq!(edit(&mut ed, "inline.bold", 0, 10), Some(true));
+        assert_eq!(ed.text(), "**「強調」**です");
+        assert!(ed.take_unflanked());
+        assert!(!ed.take_unflanked(), "asking clears it");
+        assert_eq!(edit(&mut ed, "inline.bold", 0, 10), Some(true));
+        assert_eq!(ed.text(), "「強調」です");
+        assert!(!ed.take_unflanked());
+        let mut ed = selected("a 「強調」 b", 2, "a 「強調」".len());
+        edit(&mut ed, "inline.bold", 0, 10);
+        assert_eq!(ed.text(), "a **「強調」** b");
+        assert!(!ed.take_unflanked(), "with spaces around it shows");
     }
 }

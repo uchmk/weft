@@ -566,15 +566,28 @@ impl App {
                 let (now, page) = (self.now_ms(), self.view.page());
                 let Some(ed) = &mut self.editor else { return };
                 let done = commands::edit(ed, name, now, page);
+                let unflanked = ed.take_unflanked();
                 if done.is_some() {
                     self.view.follow = true;
                 }
                 if done == Some(false) {
                     self.nothing_here(name);
                 }
+                if unflanked {
+                    self.unflanked();
+                }
             }
             _ => {}
         }
+    }
+
+    /// A format command put its marks in next to punctuation, where Markdown
+    /// may not read them as emphasis: one line on the status bar, said to the
+    /// screen reader. Not under the bell, and nothing to answer.
+    fn unflanked(&mut self) {
+        let text = self.table.tr("edit.unflanked").to_owned();
+        self.announce(text.clone());
+        self.note = Some(text);
     }
 
     /// A command that does not apply at the caret changes nothing on the
@@ -1915,5 +1928,32 @@ mod tests {
         }
         assert_eq!(app.said, ["Saved s.md"]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 10.10: Bold next to punctuation (`**「強調」**です`) goes in, and one
+    /// line on the status bar, said to the screen reader, tells that it may
+    /// not show as bold: nothing under the bell, nothing to answer. Taking
+    /// it off says nothing.
+    #[test]
+    fn bold_next_to_punctuation_is_put_in_and_told_on_the_status_bar() {
+        let ctx = egui::Context::default();
+        let mut app = App::for_tests();
+        let mut ed = engine::Editor::new("「強調」です");
+        ed.set_caret(0, false);
+        ed.set_caret("「強調」".len(), true);
+        app.editor = Some(ed);
+        app.run_key(&ctx, keymap::Cmd::Run("inline.bold"));
+        assert_eq!(app.editor.as_ref().unwrap().text(), "**「強調」**です");
+        let line = "The marks are in, but next to punctuation they may not show as emphasis";
+        assert_eq!(app.note.as_deref(), Some(line));
+        assert_eq!(app.said, [line]);
+        assert!(app.notices.is_empty(), "not under the bell");
+        assert!(app.quit.is_none() && app.palette.is_none(), "nothing to answer");
+
+        app.note = None;
+        app.run_key(&ctx, keymap::Cmd::Run("inline.bold"));
+        assert_eq!(app.editor.as_ref().unwrap().text(), "「強調」です");
+        assert_eq!(app.note, None);
+        assert_eq!(app.said.len(), 1);
     }
 }

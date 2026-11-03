@@ -73,6 +73,25 @@ fixed = "{} は weft が先に読むので、ここに割り当てても動き�
 "Format the table" = "表を整える"
 "To the next cell" = "次のセルへ"
 "To the previous cell" = "前のセルへ"
+"Toggle bold" = "太字を切り替える"
+"Toggle italic" = "斜体を切り替える"
+"Toggle inline code" = "インラインコードを切り替える"
+"Toggle strikethrough" = "取り消し線を切り替える"
+"Toggle a link" = "リンクを切り替える"
+"Toggle heading 1" = "見出し 1 を切り替える"
+"Toggle heading 2" = "見出し 2 を切り替える"
+"Toggle heading 3" = "見出し 3 を切り替える"
+"Toggle heading 4" = "見出し 4 を切り替える"
+"Toggle heading 5" = "見出し 5 を切り替える"
+"Toggle heading 6" = "見出し 6 を切り替える"
+"Turn the headings into paragraphs" = "見出しを段落に戻す"
+"Toggle the quote" = "引用を切り替える"
+"Toggle the code block" = "コードブロックを切り替える"
+"Toggle the bulleted list" = "箇条書きを切り替える"
+"Toggle the numbered list" = "番号付きリストを切り替える"
+"Toggle the task list" = "タスクリストを切り替える"
+"Check the selected tasks" = "選んだタスクを完了にする"
+"Uncheck the selected tasks" = "選んだタスクを未完了にする"
 
 [help]
 title = "キー"
@@ -124,6 +143,7 @@ spoken = "{0}。{1} Enter: {2}、N: {3}、Esc: {4}"
 
 [edit]
 nothing = "{0}: ここでは何もできません"
+unflanked = "記号を入れましたが、約物と隣り合うため強調として表示されないことがあります"
 
 [status]
 line_col = "{0} 行 {1} 列"

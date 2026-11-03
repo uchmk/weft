@@ -44,8 +44,8 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 
 | # | Do | Expect |
 |---|---|---|
-| 4.1 | Press `Ctrl+Shift+P`, or click the palette field in the title bar | The palette lists Report a problem, Reset the scale, Settings, Key help, Quit, Save, the external editor, Undo, Redo, Select all and the block, section, list and table commands; not the caret's moves |
-| 4.2 | Look at the right of each row in 4.1 | Every command the keymap binds shows its key (`Ctrl+,`, `F1`, `Ctrl+Q`, `Ctrl+S`, `Alt+↑`); Renumber the list, Format the table and the cell moves have none |
+| 4.1 | Press `Ctrl+Shift+P`, or click the palette field in the title bar | The palette lists Report a problem, Reset the scale, Settings, Key help, Quit, Save, the external editor, Undo, Redo, Select all, the block, section, list and table commands and the format commands of section 10; not the caret's moves |
+| 4.2 | Look at the right of each row in 4.1 | Every command the keymap binds shows its key (`Ctrl+,`, `F1`, `Ctrl+Q`, `Ctrl+S`, `Alt+↑`); Renumber the list, Format the table, the cell moves and the format commands have none |
 | 4.3 | Type `set` and press `Enter` | The settings open |
 | 4.4 | Press `Esc` with the palette open | The palette closes and nothing runs |
 
@@ -106,3 +106,21 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 | 9.5 | Run `weft +5000 LONG.md` on a file of more than 5000 lines | The caret's line is in view from the first frame, without scrolling, and stays in view when the Japanese font comes in |
 | 9.6 | Run `weft + FILE.md`, `weft +0 FILE.md`, `weft +x FILE.md`, `weft +3: FILE.md` | Each says ``bad position `…`: give +LINE or +LINE:COL, both from 1`` and does not start |
 | 9.7 | In kura, with weft as the `.md` opener, open a `.md` at a line (a heading in kura's outline; kura needs ito-openin at ceb61fd or later) | weft opens it with the caret on that line (and column, when kura passes one) |
+
+## 10. Formatting
+
+The format commands have no key (Toggle the task keeps its `Ctrl+Enter`): run them by name from the palette (`Ctrl+Shift+P`).
+
+| # | Do | Expect |
+|---|---|---|
+| 10.1 | Select three list items (`- a`, `- b`, `- c`) and run "Toggle bold"; run it again | Each item's text is bold (`- **a**`) with the `- ` left outside, and the same text stays selected; the second run takes the marks off |
+| 10.2 | Select two plain lines from the end back to the start, run "Toggle the numbered list", press `Ctrl+Z` once, then `Ctrl+Y` | The lines become `1.` and `2.`; the one `Ctrl+Z` brings back both the text and the selection (the caret at the start); `Ctrl+Y` brings back the list and its selection |
+| 10.3 | With the caret in a paragraph, run "Toggle heading 3", "Toggle heading 1", "Toggle heading 1" again; then "Toggle heading 6" and "Turn the headings into paragraphs" | `### `, then `# `, then a paragraph again, the caret staying in its word; heading 6 is taken off by the last one, which does nothing on a paragraph |
+| 10.4 | Select two paragraphs with a blank line between them and run "Toggle the quote"; run it again | Every line starts with `> ` and the blank one with `>`, so it is one quote; the second run takes it off |
+| 10.5 | Select two lines and run "Toggle the code block"; run it again; put the caret in a ` ```rust ` block and run it | The lines are wrapped in ` ``` ` fences with the lines still selected; the second run takes the fences off; the Rust block loses its fences and keeps its code |
+| 10.6 | Select tasks, some checked, a plain item and a paragraph; run "Check the selected tasks", "Uncheck the selected tasks", then `Ctrl+Enter` twice; then `Ctrl+Enter` with the caret alone on the plain item | Check ticks every box, Uncheck clears them, the plain item and the paragraph stay as they were; with the selection `Ctrl+Enter` checks all, then unchecks all; with the caret alone it gives the plain item a box |
+| 10.7 | Select two plain lines and run "Toggle the bulleted list", "Toggle the numbered list", "Toggle the task list", "Toggle the task list" | `- `, then `1.` / `2.`, then `- [ ] `, then plain lines again |
+| 10.8 | In a file with CRLF line ends, run the commands of 10.1, 10.2 and 10.5 and save | The status bar still says CRLF and the saved file has CRLF on every line, the new fence lines too |
+| 10.9 | Put the caret in a ` ``` ` block and run "Toggle bold", "Toggle heading 1", "Toggle the quote", "Check the selected tasks"; press `Ctrl+Z`; open a Shift_JIS file and run them | Nothing changes and `Ctrl+Z` has nothing to undo from them; the Shift_JIS file stays as it is |
+| 10.10 | Select `「強調」` in `「強調」です` and run "Toggle bold"; run it again | `**「強調」**です` goes in, and the status bar says once that next to punctuation the marks may not show as emphasis (said to a screen reader too; nothing under the bell, nothing to answer); taking it off says nothing |
+| 10.11 | Put the caret in a word and run "Toggle italic", "Toggle inline code" and "Toggle strikethrough" (each again to take it off); select a word and run "Toggle a link" | The word gets `*…*`, `` `…` `` and `~~…~~` with their colours; the link is `[word]()` with the caret between the parentheses, ready for the address |
