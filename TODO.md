@@ -59,7 +59,8 @@
 - [ ] 入力の優先順位（IME → 補完 → キーマップ → コマンド）。変換中は補完を開かない、確定の Enter をコマンドにしない。
 - [x] 全角スペースと意図しないハード改行を控えめにハイライト（全角スペースは薄い枠、段落の中のハード改行になる行末の空白は薄い色と点。TESTING.md 8.10）。
 - [ ] 状態欄: 行・列、日本語の文字数、選択の文字数、保存状態、文字コード、改行コード、IME の状態（`ito-statusbar`）。
-  IME のオン・オフと入力モードを読む手段が `ito-ime` に無いので uchmk/ito#166 で頼んだ（今は「変換中」だけ出せる）。
+  IME のオン・オフと入力モードは uchmk/ito#166 で頼み、ito の v0.227.0（3f57ba3）で入った（`Ime::status(ctx) -> Option<Status>`、テスト用に `Ime::fake_status`）。
+  作業中の枝を取り込んだあと、ito の rev を c77aba9（v0.228.0。3f57ba3 を含む）に上げて状態欄に配線する。実際の IME での表示は weft の側で確かめる。
 
 ### フェーズ 3 Markdown 操作（`ito-mdedit` を配線する）
 - [x] `block.move_up` / `block.move_down`（リストの項目は `move_item` で子の項目ごと 1 つ、それ以外は `move_block`。`Alt+↑` / `Alt+↓`）、節の移動（`move_section`、`Alt+Shift+↑` / `Alt+Shift+↓`）。
@@ -68,6 +69,9 @@
 - [ ] `table.format`（`format_table`。全角は 2 セル幅）、`table.next_cell`（`next_cell`、Tab / Shift+Tab）。
   コマンドとパレットには入れた。Tab / Shift+Tab の割り当てが残っている。決めたこと（2026-11-03）: 表の中はセルの移動、リストの項目では字下げ・戻し（`indent_item` / `outdent_item`）、
   それ以外では Tab が空白を入れ、Shift+Tab が行頭の空白を戻す。空白の数は設定で選べる（既定は 4）。
+  枝 `wt/tab` で作り、別のエージェントが確かめた（verify 58 件が通る。設定の画面・IME の変換中・元に戻す・読み取り専用も確かめた）。
+  ただし表で Tab を押すと、ito-mdedit の `table::render` が行の字下げと CRLF を落とす（リストの中の表がリストの外に出る、CRLF のファイルに LF が混ざる）。
+  前から `table.format` にあった不具合だが、Tab で毎回起きるので uchmk/ito#170 が入るまで取り込まない。
 - [ ] 見出しの折りたたみ（`heading.fold`）、目次の挿入・更新（`heading.insert_toc`）。
   折りたたみは `ito-outline` の `section` を使う weft の表示。目次の挿入・更新は uchmk/ito#163 で頼んだ。
 - [ ] 構造選択（単語 → 段落 → リスト → 節 → 親の節）、構造を壊さない削除、構造ナビゲーション、構造診断（lint）、集中表示。
@@ -77,7 +81,8 @@
 - [ ] 自動保存・強制終了からの復元、外部変更の検知（`ito-watch`。未保存があれば差分を見せて選ばせる）。
 - [ ] 画像の貼り付け（添付フォルダー `assets/` へ WebP、日時＋連番、ハッシュで重複を再利用、1 回の元に戻すでファイルもゴミ箱へ）。
   非可逆 WebP の手段は ito・kura に無かった（kura は `image` で読むだけ、`image` の書き出しは可逆のみ。クリップボードの画像を読む部品も無い）。
-  uchmk/ito#162 で頼んだ（クリップボードの画像を読む・非可逆 WebP に書く）。入るまで待つ。
+  uchmk/ito#162 で頼み、ito の v0.228.0（c77aba9）の `ito-image` で入った（`clipboard_image()` で RGBA、透明を残す非可逆 WebP の `encode_webp`。
+  テストでは `ito_image::fake` か `ITO_CLIPBOARD_IMAGE`）。4K ではエンコードが重いのでワーカーで呼ぶ。rev を上げたあと、フェーズ 4 の順で取りかかる。
 - [ ] 貼り付けの賢さ（選択に URL → `[選択](URL)`、HTML・表 → Markdown）。
 - [ ] 右に整形プレビュー（`ito-mdview`）、原文にミニマップ（`ito-minimap`）、目次（`ito-outline`）、位置の同期。
 - [ ] ガターの変更表示（`ito-diff`、変更の周りだけ計算）。
@@ -96,7 +101,8 @@
 - [ ] kura の opener で `.md` に Enter → weft が開き、`+N` の行指定が効く。
   kura は `ito_openin::lines::line_arg` で行の渡し方を決める。組み込みの表に weft を足すのを uchmk/ito#165 で頼み、ito の v0.226.2（ceb61fd）で入った
   （`weft = joined("+", ":", false)`、列は文字数）。kura は rev を上げるだけ。
-  weft の側（`+行` / `+行:列` を受け付ける）は作業中。kura の `.md` の opener を weft にするのは kura の側。
+  weft の側は 0.2.3 で入った（`weft +行[:列] FILE`、列は文字数、範囲の外は端に寄せる。TESTING.md 9.4〜9.6 は自動、9.7 は人）。
+  残りは kura の側: ito-openin を ceb61fd 以降に上げることと、`.md` の opener を weft にすること。今の kura が行を渡すのはアウトラインの見出しだけで、列は渡さない。
 
 ### その後（設計の「後回し」）
 - 数式（v2）・Mermaid（v2〜v3。ライブラリの選定は ito への crate-request の候補）、書き出し、動画、テンプレート、タスク・タグの一覧、
@@ -108,3 +114,8 @@
   字の並びを ito で一か所にまとめるのを uchmk/ito#167 で頼んだ（7 つのアプリが同じ処理を書いている）。入ったら `take_font` をそれに置き換える。
 - 文字数の桁区切り（`12,345`）の部品が ito-common に無いので uchmk/ito#168 で頼んだ（minato・kura に同じものがある）。状態欄は今は区切らずに出している。
 - 範囲の書記素を数える部品が ito-textbuf の `pos` に無いので uchmk/ito#169 で頼んだ。入ったら weft の `count::count` をそれに置き換える。
+- ito-mdedit のリストの操作が、コードの囲みの中の `- x` を項目として扱う。番号つきの項目を字下げしても番号を振り直さない（CommonMark ではリストでなくなる）。
+  タブで字下げした項目を項目と見ない。uchmk/ito#171 で頼んだ（`list.indent` と Tab の両方に効く）。
+- 複数行の選択にリストの項目が入っていると、Tab の働きが選択の終わりの行で決まる（終わりが項目ならその項目だけ字下げ、段落なら全部の行に空白）。
+  選択の全部の行を字下げするか、どう揃えるかはユーザーが決める（TESTING 8.11 の文言も合わせる）。
+- 設定の画面でタブの幅を素早く 2 回変えると、書き込みのスレッドの順で古い値が残りうる（`prefs.rs` の `tab_width_edit`。`notify_edit` も同じ作り。コードを読んだだけ）。

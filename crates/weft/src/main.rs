@@ -42,11 +42,15 @@ const REPO: &str = "https://github.com/uchmk/weft";
 const USAGE: &str = "\
 weft — Markdown 専用エディター。キーだけで見出し・リスト・表などの構造を組み替え、日本語 IME に強く、フォルダー（vault）も扱う。kura の .md の opener
 
-usage: weft [FILE] [--keys SCRIPT]
+usage: weft [+LINE[:COL]] [FILE] [--keys SCRIPT]
        weft --version | --help | env
 
   FILE           the Markdown file to edit (one that is not there yet is
                  made when it is saved)
+  +LINE[:COL]    start with the caret there, both from 1, the column in
+                 characters (kura's opener passes it); before or after FILE.
+                 Past the end is the last line, or the line's end. A FILE
+                 whose name starts with + is given as ./+name
   env            print what a bug report needs (version, files, last run); no window
   --keys SCRIPT  press these keys once the window is up, as kura's --keys;
                  WEFT_KEYS_DONE names the file that says how it ended
@@ -1204,21 +1208,73 @@ fn say(text: &str, err: bool) {
     }
 }
 
-/// `FILE` off the front of the arguments: the first, when it is not an
-/// option or `env`. What is left is for [`keys_arg`] and the options.
-fn file_arg(args: &[String]) -> (Option<PathBuf>, &[String]) {
-    match args {
-        [f, rest @ ..] if !f.starts_with('-') && f != "env" => (Some(PathBuf::from(f)), rest),
-        _ => (None, args),
+/// Where the caret starts: `+LINE` or `+LINE:COL`, both from 1, the column
+/// in characters (kura's opener passes it as ito-openin's `joined("+", ":")`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Goto {
+    line: usize,
+    /// 1 when only the line is given.
+    col: usize,
+}
+
+impl Goto {
+    /// `arg` as a position; `None` when it does not start with `+`.
+    fn parse(arg: &str) -> Option<Result<Goto, String>> {
+        let spec = arg.strip_prefix('+')?;
+        let number = |s: &str| s.bytes().all(|b| b.is_ascii_digit()).then(|| s.parse::<usize>().ok()).flatten().filter(|&n| n > 0);
+        let (line, col) = match spec.split_once(':') {
+            Some((l, c)) => (number(l), number(c)),
+            None => (number(spec), Some(1)),
+        };
+        Some(match (line, col) {
+            (Some(line), Some(col)) => Ok(Goto { line, col }),
+            _ => Err(format!("bad position `{arg}`: give +LINE or +LINE:COL, both from 1")),
+        })
     }
+
+    /// Put the caret of the document just opened there; the first frame
+    /// scrolls to it. Without a document, nothing.
+    fn apply(self, app: &mut App) {
+        if let Some(ed) = &mut app.editor {
+            ed.go_to(self.line, self.col);
+            app.view.follow = true;
+        }
+    }
+}
+
+/// The file, where its caret starts, and the arguments left over.
+type FileArg<'a> = (Option<PathBuf>, Option<Goto>, &'a [String]);
+
+/// `FILE` off the front of the arguments: the first, when it is not an
+/// option or `env`, with one `+LINE[:COL]` before or after it. What is left
+/// is for [`keys_arg`] and the options.
+fn file_arg(args: &[String]) -> Result<FileArg<'_>, String> {
+    let mut goto = None;
+    let mut args = args;
+    if let Some(g) = args.first().and_then(|a| Goto::parse(a)) {
+        goto = Some(g?);
+        args = &args[1..];
+    }
+    let file = match args {
+        [f, rest @ ..] if !f.starts_with('-') && !f.starts_with('+') && f != "env" => {
+            args = rest;
+            Some(PathBuf::from(f))
+        }
+        _ => None,
+    };
+    if let (None, Some(g)) = (goto, args.first().and_then(|a| Goto::parse(a))) {
+        goto = Some(g?);
+        args = &args[1..];
+    }
+    Ok((file, goto, args))
 }
 
 fn main() -> eframe::Result {
     let all: Vec<String> = std::env::args().skip(1).collect();
-    let (file, args) = file_arg(&all);
     let done = std::env::var_os("WEFT_KEYS_DONE").filter(|v| !v.is_empty()).map(PathBuf::from);
-    let script = match keys_arg(args) {
-        Ok(s) => s,
+    let parsed = file_arg(&all).and_then(|(file, goto, args)| keys_arg(args).map(|script| (file, goto, args, script)));
+    let (file, goto, args, script) = match parsed {
+        Ok(p) => p,
         Err(e) => {
             // A run started detached never sees the message: the done file carries it (ito #193).
             if let Some(done) = &done {
@@ -1262,7 +1318,11 @@ fn main() -> eframe::Result {
                 r.watch(cc.egui_ctx.clone());
                 r
             });
-            Ok(Box::new(App::new(cc, &saved, script, file)))
+            let mut app = App::new(cc, &saved, script, file);
+            if let Some(g) = goto {
+                g.apply(&mut app);
+            }
+            Ok(Box::new(app))
         }),
     )
 }
@@ -1282,6 +1342,59 @@ mod tests {
         assert_eq!(a(&["--keys"]).unwrap_err(), "--keys needs a script");
         assert!(a(&["--keys", "<Nope>"]).unwrap_err().starts_with("--keys:"));
         assert_eq!(a(&["--keys", "j", "--more"]).unwrap_err(), "unknown argument `--more`");
+    }
+
+    fn strings(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// 9.4: `weft +3:5 FILE` (or `weft FILE +3:5`) opens FILE with the caret
+    /// on line 3, column 5: `<State:at>` says `caret: 3:5`.
+    #[test]
+    fn a_line_and_column_before_or_after_the_file_put_the_caret_there() {
+        let dir = std::env::temp_dir().join(format!("weft-goto-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("g.md");
+        std::fs::write(&file, "# g\r\n\r\nsome text\r\n").unwrap();
+        let name = file.display().to_string();
+        for args in [["+3:5", name.as_str()], [name.as_str(), "+3:5"]] {
+            let all = strings(&args);
+            let (path, goto, rest) = file_arg(&all).unwrap();
+            assert_eq!(goto, Some(Goto { line: 3, col: 5 }));
+            assert!(rest.is_empty());
+            let mut app = App::for_tests();
+            app.open(&path.unwrap());
+            goto.unwrap().apply(&mut app);
+            assert!(app.report().contains("caret: 3:5\n"), "{}", app.report());
+            assert!(app.view.follow, "the first frame scrolls to it");
+        }
+        let all = strings(&["+40", &name]);
+        let (path, goto, _) = file_arg(&all).unwrap();
+        let mut app = App::for_tests();
+        app.open(&path.unwrap());
+        goto.unwrap().apply(&mut app);
+        assert!(app.report().contains("caret: 4:1\n"), "past the end is the last line: {}", app.report());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 9.6: A bad `+LINE[:COL]` (`+`, `+0`, `+x`, `+3:`) is refused as any
+    /// bad argument is; a second one is an unknown argument.
+    #[test]
+    fn the_position_argument_takes_a_line_and_a_column_from_one() {
+        let a = |v: &[&str]| file_arg(&strings(v)).map(|(f, g, rest)| (f, g, rest.to_vec()));
+        let at = |line, col| Some(Goto { line, col });
+        assert_eq!(a(&["+12", "a.md"]).unwrap(), (Some("a.md".into()), at(12, 1), vec![]));
+        assert_eq!(a(&["a.md", "+12:7"]).unwrap(), (Some("a.md".into()), at(12, 7), vec![]));
+        assert_eq!(a(&["+2", "a.md", "--keys", "j"]).unwrap(), (Some("a.md".into()), at(2, 1), strings(&["--keys", "j"])));
+        assert_eq!(a(&["a.md", "+2", "--keys", "j"]).unwrap().2, strings(&["--keys", "j"]));
+        assert_eq!(a(&["+2"]).unwrap(), (None, at(2, 1), vec![]));
+        assert_eq!(a(&["a.md"]).unwrap(), (Some("a.md".into()), None, vec![]));
+        assert_eq!(a(&["./+a.md"]).unwrap(), (Some("./+a.md".into()), None, vec![]));
+        assert_eq!(a(&["+1", "a.md", "+2"]).unwrap().2, strings(&["+2"]), "one position: the second is left over");
+        for bad in ["+", "+0", "+x", "+3:", "+:3", "+3:0", "+3:x", "++3", "+-3", "+3:4:5", "+99999999999999999999999"] {
+            assert_eq!(a(&[bad, "a.md"]).unwrap_err(), format!("bad position `{bad}`: give +LINE or +LINE:COL, both from 1"));
+            assert!(a(&["a.md", bad]).is_err(), "{bad} after the file");
+        }
     }
 
     /// 4.2: The palette and the keymap name the same things: every command
