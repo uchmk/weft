@@ -455,4 +455,100 @@ mod tests {
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// A table in a list item stays in the item: every row keeps its indent,
+    /// a new row past the last cell too (uchmk/ito#170).
+    #[test]
+    fn tab_in_a_table_inside_a_list_item_keeps_the_rows_indent() {
+        let t = "- item\n  | a | b |\n  | --- | --- |\n  | c | d |\n";
+        let lined_up = "- item\n  | a   | b   |\n  | --- | --- |\n  | c   | d   |\n";
+        let mut ed = at(t, t.find('a').unwrap());
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), lined_up);
+        assert!(ed.text()[ed.caret()..].starts_with("b   |"), "{:?}", &ed.text()[ed.caret()..]);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert!(ed.text()[ed.caret()..].starts_with("c   |"), "over the delimiter row");
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert!(ed.text()[ed.caret()..].starts_with("b   |"));
+        assert_eq!(ed.text(), lined_up);
+        ed.set_caret(lined_up.find('d').unwrap(), false);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- item\n  | a   | b   |\n  | --- | --- |\n  | c   | d   |\n  |     |     |\n", "the new row too");
+        assert!(ed.text()[..ed.caret()].ends_with("\n  | "), "the caret in the new row's first cell");
+    }
+
+    /// A CRLF table is written back with CRLF between its rows, a new row
+    /// too, and in a list item as well (uchmk/ito#170).
+    #[test]
+    fn tab_in_a_crlf_table_keeps_crlf_inside_the_table() {
+        let t = "| a | b |\r\n|---|---|\r\n| 1 | 2 |\r\n";
+        let mut ed = at(t, 2);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "| a   | b   |\r\n| --- | --- |\r\n| 1   | 2   |\r\n");
+        assert!(ed.text()[ed.caret()..].starts_with("b   |"));
+        ed.set_caret(ed.text().find('2').unwrap(), false);
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "| a   | b   |\r\n| --- | --- |\r\n| 1   | 2   |\r\n|     |     |\r\n");
+        let t = "- x\r\n  | a | b |\r\n  |---|---|\r\n";
+        let mut ed = at(t, t.find('a').unwrap());
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- x\r\n  | a   | b   |\r\n  | --- | --- |\r\n");
+    }
+
+    /// In a code fence a `- x` line is code, not a list item: Tab puts the
+    /// spaces in at the caret and Shift+Tab takes the tab width of spaces off
+    /// the line, as in a paragraph (uchmk/ito#171).
+    #[test]
+    fn tab_on_a_list_line_in_a_code_fence_puts_spaces_at_the_caret() {
+        let t = "```\n- x\n```\n";
+        let mut ed = at(t, "```\n- ".len());
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "```\n-     x\n```\n");
+        assert_eq!(ed.caret(), "```\n-     ".len());
+        let t = "```\n    - x\n```\n";
+        let mut ed = at(t, t.find('x').unwrap());
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "```\n- x\n```\n", "the tab width of spaces, not a list level");
+    }
+
+    /// Tab makes a numbered item the first of a new sublist (from 1) and the
+    /// list it left goes on numbered; Shift+Tab puts it back in the numbers.
+    /// Each press is one undo step, the numbers with it (uchmk/ito#171).
+    #[test]
+    fn tab_and_shift_tab_on_a_numbered_item_keep_both_lists_numbered_from_their_start() {
+        let t = "1. a\n2. b\n";
+        let mut ed = at(t, t.find('b').unwrap());
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. a\n   1. b\n");
+        assert_eq!(&ed.text()[ed.caret()..], "b\n", "the caret stays on its word");
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. a\n2. b\n");
+        assert_eq!(&ed.text()[ed.caret()..], "b\n");
+
+        let t = "1. a\n2. b\n3. c\n";
+        let mut ed = at(t, t.find('b').unwrap());
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. a\n   1. b\n2. c\n");
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. a\n2. b\n3. c\n");
+        assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(true));
+        assert_eq!(ed.text(), "1. a\n   1. b\n2. c\n");
+        assert_eq!(edit(&mut ed, "edit.undo", 0, 10), Some(true));
+        assert_eq!(ed.text(), t);
+    }
+
+    /// An item indented with a tab is a list item: Tab takes it one level in,
+    /// Shift+Tab out to the left edge (uchmk/ito#171).
+    #[test]
+    fn tab_on_a_tab_indented_item_indents_it_as_an_item() {
+        let t = "- top\n\t- tabbed\n";
+        let mut ed = at(t, t.find("tabbed").unwrap());
+        assert_eq!(edit(&mut ed, "edit.tab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- top\n      - tabbed\n", "the tab is read as 4 and written as spaces, 2 more");
+        assert_eq!(&ed.text()[ed.caret()..], "tabbed\n");
+        let mut ed = at(t, t.find("tabbed").unwrap());
+        assert_eq!(edit(&mut ed, "edit.untab", 0, 10), Some(true));
+        assert_eq!(ed.text(), "- top\n- tabbed\n");
+        assert_eq!(&ed.text()[ed.caret()..], "tabbed\n");
+    }
 }
