@@ -18,7 +18,7 @@
 - [x] 窓の場所を戻す: `window::Saved` で戻し、`Tracker::follow` で書き、`on_exit` で `Tracker::close`。
 - [x] 通知を入れる（0.2.4）: common.toml・テーマ・config.toml の `[notify]`・keymap.toml の読めなかったことは、ベルに `Kind::Warn` で 1 回だけ（直ってからまた壊れたら再び）。
   通知は飛び先のファイルを持つ（`Notice<PathBuf>`）。窓が後ろのときの保存の失敗は ito-prefs の `tell_open`（tag は通知の番号）で出し、押すと窓が前に出て文書が前に来る。
-  別のエージェントが確かめた（verify 56 件、TESTING 5.4・5.5・7.3・7.4 はテスト、5.6・7.5 は人）。最小化した窓が戻らないのは ito-prefs の不具合（見つけた課題）。
+  別のエージェントが確かめた（verify 56 件、TESTING 5.4・5.5・7.3・7.4 はテスト、5.6・7.5 は人）。最小化した窓が戻らないのは ito-prefs の不具合だった（uchmk/ito#172、v0.232.0 で直り 0.2.6 で入れた）。
 - [x] コマンドパレットの中身: 不具合の報告・拡大率を戻す・設定・キーのヘルプ・終了と、`commands::ALL` のうち `palette` のもの（保存・外部エディター・元に戻す・構造のコマンド）。キーは `ito-keymap` から引く。
 - [x] 字体: `ito-fonts` で日本語の字体を別スレッドで読み、`egui` に足す。
 - [x] `TESTING.md` に確認の行（起動・キーのヘルプ・設定・パレット・通知・拡大率・台本・編集・外部エディター）を足し、`cargo run --example make-testcheck` で `TESTING-CHECKS.md` を作った。
@@ -62,8 +62,11 @@
 - [ ] 状態欄: 行・列、日本語の文字数、選択の文字数、保存状態、文字コード、改行コード、IME の状態（`ito-statusbar`）。
   IME のオン・オフと入力モードは uchmk/ito#166 で頼み、ito の v0.227.0（3f57ba3）で入った（`Ime::status(ctx) -> Option<Status>`、テスト用に `Ime::fake_status`）。
   0.2.5 で文字数（ワーカーで数え、選択は索引から両端だけ）・選択の文字数・文字コード・BOM・改行コード・変換中が入った（別のエージェントが 8 MB の実物と計測で確かめた。
-  Ctrl+A は索引があれば 0.04 ms、無ければ「選択 …」）。残りは IME のオン・オフと入力モード: ito の rev を上げて状態欄に配線する。実際の IME での表示は weft の側で確かめる。
-  同じ rev で、文字数の数え方を `ito_textbuf::pos::count_chars`（#169、v0.229.0）に、桁区切りを `ito_common::text::grouped`（#168、v0.229.0）に置き換える。
+  Ctrl+A は索引があれば 0.04 ms、無ければ「選択 …」）。
+  0.2.6 で IME のオン・オフと入力モード（ito v0.232.0 の `Ime::status`。オフは薄く、ほかは「IME オン」。TESTING 8.14 はテスト、8.15 は人）が入り、
+  文字数は `ito_textbuf::pos::count_chars`（範囲を書記素の境で広げてから。別のエージェントが絵文字・NFD・国旗・CRLF の全部の端で旧と同じ数を確かめた）になった。
+  残りは桁区切り（`ito_common::text::grouped`）。入れると、今のテスト（`a_large_selection_is_counted_from_the_reading_or_shown_pending`）が期待する「選択 12345」が「選択 12,345」に変わる。
+  ユーザーが区切りを入れる案を選んだ（2026-11-03）ので、文字数と選択の文字数に区切りを入れ、このテストの期待値も区切りのある形に変える。
 
 ### フェーズ 3 Markdown 操作（`ito-mdedit` を配線する）
 - [x] `block.move_up` / `block.move_down`（リストの項目は `move_item` で子の項目ごと 1 つ、それ以外は `move_block`。`Alt+↑` / `Alt+↓`）、節の移動（`move_section`、`Alt+Shift+↑` / `Alt+Shift+↓`）。
@@ -87,10 +90,21 @@
 - [ ] 書式のキー（2026-11-03 にユーザーが決めた）: 行内のコードは `Ctrl+``、コードの囲み（` ``` `）は `Ctrl+Shift+``。太字・斜体・取り消し線・リンク・見出し 1〜6・引用・
   箇条書き・番号・タスクも名前つきのコマンドにする。どれも選択の範囲に効き（行ごとに包む、全部が済んでいれば外す）、1 回の元に戻すで戻る。
   タスクは選択の範囲の項目をまとめてチェックするキーと、まとめて外すキーを持つ。中身（選択を受けて選択を返す、コードの中では何もしない、CRLF・字下げ・`>` を保つ）は
-  uchmk/ito#174 で ito-mdedit に頼んだ。`Ctrl+Shift+X` は egui が切り取りとして取るので取り消し線には使えない。
+  uchmk/ito#174 で ito-mdedit に頼み、ito の v0.232.0（10f9abe）の `format`（`inline`・`line_type`・`check_tasks` / `uncheck_tasks` / `toggle_tasks`、`SelChange`）で入った。
+  枝 `wt/format` でコマンドとして配線中（キーはまだ割り当てない）。
   キーの決まっていないもの: ユーザーは日本語配列で、`` ` `` は `Shift+@` でしか打てない（`Ctrl+Alt+`` も同じ理由で不可）。どのキーにするかは実機で届き方を確かめてから決める（ユーザーの選んだ案）。
-  コードを読んだ範囲では、ito-keys の `from_egui` は記号のキーの Shift を落とすので、`<C-S-`>` はどの配列でも届かない。egui には `@` のキーが無く、
-  JIS の `Ctrl+@` は物理キーの `[` として届く見込み。一括チェック・一括解除は `Ctrl+Enter` / `Ctrl+Shift+Enter` 以外（ユーザーの指定）。
+  実機（日本語配列 HKL 0x04110411、eframe 0.36.2・ito-keys aef9deb、スキャンコードで送った。ログは scratchpad の `keyprobe`）で確かめたこと:
+  `Ctrl+Shift+@`（JIS で打つ「Ctrl+`」）は `<C-`>`。`Ctrl+@` と `Ctrl+[` はどちらも `<C-[>`。`<C-S-`>` は何を押しても届かない（ito-keys が記号の Shift を落とす）。
+  `Ctrl+^` と `Ctrl+Shift+^` はどちらも `<C-=>`。`Ctrl+B` / `I` / `K`・`Ctrl+Shift+K`・`Ctrl+1`〜`6` はそのまま届く。
+  `Ctrl+Shift+X`・`Ctrl+Alt+X` は egui の切り取りになり、weft の `read_keys` は `from_clipboard` を通さないので捨てられる。`Ctrl+Shift+Q` は egui の既定の
+  `quit_shortcuts` が取って窓を閉じる（weft では終了の確認になる）。`Alt+X` は `<A-x>` に加えて文字の `x` も来る（`Alt+Shift+5` は `<A-5>` と `%`）。
+  weft の `view.rs` は来た文字をそのまま入れるので、Alt＋文字のキーは文字も打ってしまう。ito-pane・ito-prefs はそれぞれ自前で落としているので、
+  共通の読み方を uchmk/ito#176 で ito-keys に頼み、ito の v0.233.0（9f1da36）の `ito_keys::read`（キーと文字を来た順に返し、取ったキーと Alt の和音の文字を落とす）で入った。
+  `Ctrl+Shift+Q` を使うなら egui の `quit_shortcuts` を空にする。一括チェック・一括解除は `Ctrl+Enter` / `Ctrl+Shift+Enter` 以外（ユーザーの指定）。
+  決めたキー（2026-11-03、ユーザーが推奨の案を選んだ）: 行内のコード `Ctrl+Shift+@`（`<C-`>`）、コードの囲み `Ctrl+@`（`<C-[>`。`Ctrl+[` も同じ）、
+  太字・斜体・リンク `Ctrl+B` / `Ctrl+I` / `Ctrl+K`、見出し 1〜6 `Ctrl+1`〜`6`（同じ見出しでもう一度押すと段落）、番号・箇条書き `Ctrl+Shift+[` / `Ctrl+Shift+]`（`<C-{>` / `<C-}>`）、
+  引用 `Alt+Q`、タスク `Alt+T`、取り消し線 `Alt+Shift+5`（`<A-5>`）、まとめてチェック・外す `Alt+X` / `Alt+Shift+X`。`list.toggle_task` は `Ctrl+Enter` のまま。
+  Ctrl のキーは `wt/format` で割り当てる。Alt のキーは ito を v0.234.0 に上げて `ito_keys::read` に替えてから割り当てる。
 
 ### フェーズ 4 実用エディター
 - [ ] 自動保存・強制終了からの復元、外部変更の検知（`ito-watch`。未保存があれば差分を見せて選ばせる）。
@@ -102,6 +116,11 @@
 - [ ] 文書のタブ（2026-11-03 にユーザーが頼んだ）: 1 つの窓で複数の `.md` を開いて切り替える。設定で、タブの出し方（いつも・2 つ以上のとき・出さない）、
   外から開いたファイルを動いている窓のタブにするか新しい窓にするか、起動時に前のタブを開き直すかを選ぶ。タブの型とタブの帯は ito に無い
   （michi・tsumugi はそれぞれ自前）ので uchmk/ito#175 で頼んだ。kura の opener から開いたファイルを動いている窓へ渡す所（`ito-ipc`）も同じ Issue に書いた。
+  ito の v0.233.0（9f1da36）で入った: 新しいクレート `ito-tabs`（`Tabs<Id>`・`Op`・`labels`・`tabs.toml`・設定の `ShowBar` / `OpenFromOutside` / `Reopen`・
+  コマンド名 `tab.next` / `tab.prev` / `tab.close` / `tab.goto_1`〜`9`・`bar`）と `ito_ipc::single::acquire`（`OpenRequest::parse`）。
+  設定の画面の行（ito-prefs）はまだ無いので、3 つの行を ito のセッションに頼んだ（2026-11-03、uchmk/ito#177。`ito_prefs::tabs_rows(ui, look, &mut ito_tabs::Settings) -> bool`、
+  機能 `tabs`。値はアプリごとに weft の設定の書き手で保存し、common.toml には入れない）。ito の v0.234.0（4f40140）で入った
+  （common.toml の言語に合わせるなら `tabs_rows_in(ui, look, TabsWords::of(lang), settings)`、設定の検索は `TABS_KEYS`・`tabs_index`。実機の `--keys` は ito では未確認）。
 - [ ] 右に整形プレビュー（`ito-mdview`）、原文にミニマップ（`ito-minimap`）、目次（`ito-outline`）、位置の同期。
 - [ ] ガターの変更表示（`ito-diff`、変更の周りだけ計算）。
 - [ ] 検索と置換（`ito-match`、正規表現・あいまい）。
@@ -131,17 +150,21 @@
 ## 見つけた課題（ユーザーが認めるまで手をつけない）
 - 編集欄の等幅フォントで、全角の括弧・数字・英字（U+FF01〜FF5A）が egui の `emoji-icon-font` の字形で描かれる（日本語の書体を族の最後に足しているため）。
   全角スペース（U+3000）はメイリオから全角で出ている。また JetBrains Mono（0.6 em）に対し漢字は 1.0 em で 1.67 桁になり、`format_table` で整えた表が編集欄で揃わない。
-  字の並びを ito で一か所にまとめるのを uchmk/ito#167 で頼み、v0.230.0（3ce9f13）の ito-fonts `load_in_background(ctx, mono)` で入った。rev を上げるときに `take_font` を置き換える。
-- 文字数の桁区切り（`12,345`）の部品が ito-common に無いので uchmk/ito#168 で頼み、v0.229.0 の `ito_common::text::grouped` で入った。rev を上げるときに状態欄で使う。
-- 範囲の書記素を数える部品が ito-textbuf の `pos` に無いので uchmk/ito#169 で頼み、v0.229.0 の `pos::count_chars` で入った。rev を上げるときに weft の `count::count` を置き換える。
+  字の並びを ito で一か所にまとめるのを uchmk/ito#167 で頼み、v0.230.0（3ce9f13）の ito-fonts `load_in_background(ctx, mono)` で入った。0.2.6 で `take_font` を置き換えた。
+- 文字数の桁区切り（`12,345`）の部品が ito-common に無いので uchmk/ito#168 で頼み、v0.229.0 の `ito_common::text::grouped` で入った。状態欄で使うのは残り（上の状態欄の項目）。
+- 範囲の書記素を数える部品が ito-textbuf の `pos` に無いので uchmk/ito#169 で頼み、v0.229.0 の `pos::count_chars` で入った。0.2.6 で weft の `count::count` を置き換えた。
 - ito-mdedit のリストの操作が、コードの囲みの中の `- x` を項目として扱う。番号つきの項目を字下げしても番号を振り直さない（CommonMark ではリストでなくなる）。
   タブで字下げした項目を項目と見ない。uchmk/ito#171 で頼み、v0.231.0（aef9deb）で直った（コードの中では `None`、字下げ・字上げで番号を振り直す、タブの字下げも項目と見る）。
   `list.indent` と Tab の両方に効く。
 - 設定の画面でタブの幅を素早く 2 回変えると、書き込みのスレッドの順で古い値が残りうる（`prefs.rs` の `tab_width_edit`。`notify_edit` も同じ作り。コードを読んだだけ）。
 - 最小化した窓で、保存できなかった通知を押しても窓が戻らない（ito-prefs の `notify_cfg.rs` が `ViewportCommand::Focus` だけを送る。`Minimized(false)` が要る）。
-  eframe 0.36.2 だけの小さな再現でも確かめた。fumi・michi・fude も同じ作り。uchmk/ito#172 で頼んだ。
+  eframe 0.36.2 だけの小さな再現でも確かめた。fumi・michi・fude も同じ作り。uchmk/ito#172 で頼み、v0.232.0 で直った。0.2.6 で入れた（TESTING 5.7 は人が確かめる）。
 - 通知の残り（低）: 言語の誤りと `prefs.failed` は 1 回だけの知らせ（`news()`）を通らない。保存の失敗のトーストは失敗のたびに 1 つずつ積もる。
   トーストの本文にパスが 2 回出る（前から）。TESTING-CHECKS の人の行が 〔未訳〕（`scripts/testcheck-ja.toml` が無い）。
 - ito-outline の `headings` が見出しごとに先頭から行を数えるので、文書の大きさの 2 乗で遅い（8 MB で 4.6 秒、行の多い文章では 71 秒。行数を続けて数えれば 21〜63 ms）。
-  画面は待たないが、編集のあと状態欄の数が数秒「…」と古い数のまま。uchmk/ito#173 で頼んだ。
+  画面は待たないが、編集のあと状態欄の数が数秒「…」と古い数のまま。uchmk/ito#173 で頼み、v0.232.0 で直った。
+  0.2.6 で入れ、8 MB（見出し 10,599）の 1 回の編集のあとの読み取りが 11.5 秒から 0.112 秒（見出し 11 ms）になった（release で計測）。
 - 読み取りが追いついていない間、選択の文字数は「…」なのに、文書の文字数は古い数のまま印が無い（TESTING 8.12 では設計どおりとしている）。
+- IME の状態は egui が画面を描くときにしか読まない。IME の切り替えでは再描画が起きないので、タスクバーのメニューなどで切り替えると、
+  次にマウスを動かすか時計が変わるまで（最大 1 分）状態欄が古いままのおそれ（検証のエージェントがコードを読んだ。TESTING 8.15 で人が確かめる）。
+  直すなら ito-ime が IME の変化で再描画を頼む形が要る（ito に頼む）。
