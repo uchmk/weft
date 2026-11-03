@@ -1,6 +1,6 @@
 # Checklist
 
-44 checks in TESTING.md, 39 left for a person.
+45 checks in TESTING.md, 39 left for a person.
 
 ## 1. Start
 
@@ -62,7 +62,7 @@
 
 ## 8. Editing
 
-自動テスト済みなので下には出していない: 8.6
+自動テスト済みなので下には出していない: 8.6, 8.10
 
 - [ ] **8.1** Run `weft FILE.md` on a file with CRLF line ends and a BOM; move with `←` `→` over `é`, `漢字` and `👍🏽` → The caret steps over a whole character each time (the emoji with its skin tone is one); the status bar says the line and column, `CRLF` and `BOM` 〔未訳〕
 - [ ] **8.2** Type a word, press `Enter`, type another; press `Ctrl+Z` three times, then `Ctrl+Y`; press `Backspace` three times quickly, then `Ctrl+Z` → The status bar says "Unsaved"; each `Ctrl+Z` takes back one step (the second word, the line break, the first word), and "Unsaved" goes once the text is back as it was read; `Ctrl+Y` puts the first word back. The three `Backspace`s come back with one `Ctrl+Z` 〔未訳〕

@@ -1,8 +1,9 @@
 //! The structure of the document, read off the UI thread: the headings
-//! (ito-outline) and the colour of every byte, by line, with the options
-//! Markdown is read with in uchmk. Each reading carries the version of the
-//! text it was read from; the worker drops jobs a newer one overtook, and the
-//! window keeps the colours it has until a newer reading comes back.
+//! (ito-outline), the colour of every byte, by line, and the trailing spaces
+//! that make a hard line break, with the options Markdown is read with in
+//! uchmk. Each reading carries the version of the text it was read from; the
+//! worker drops jobs a newer one overtook, and the window keeps the colours it
+//! has until a newer reading comes back.
 
 use std::ops::Range;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -69,12 +70,25 @@ pub struct Tree {
     pub headings: Vec<ito_outline::Heading>,
     /// By line (split at `\n`, a `\r` before it left out).
     pub lines: Vec<Runs>,
+    /// The spaces (or tabs) at the end of a line that Markdown reads as a
+    /// hard line break, easy to leave by mistake and not seen: `(line, bytes
+    /// from the line's start)`, by line, one at most per line. A backslash
+    /// break is left out, as it shows.
+    pub breaks: Vec<(usize, Range<usize>)>,
+}
+
+impl Tree {
+    /// Line `n`'s hard-break spaces, if it ends in some.
+    pub fn hard_break(&self, n: usize) -> Option<Range<usize>> {
+        let i = self.breaks.binary_search_by_key(&n, |(line, _)| *line).ok()?;
+        Some(self.breaks[i].1.clone())
+    }
 }
 
 /// Read `text` (at `version`) whole.
 pub fn read(version: u64, text: &str) -> Tree {
-    let kinds = paint(text);
-    Tree { version, headings: ito_outline::headings(text, 6), lines: lines(text, &kinds) }
+    let (kinds, breaks) = paint(text);
+    Tree { version, headings: ito_outline::headings(text, 6), lines: lines(text, &kinds), breaks: by_line(text, &breaks) }
 }
 
 fn fill(kinds: &mut [Option<Kind>], r: Range<usize>, k: Option<Kind>) {
@@ -84,10 +98,12 @@ fn fill(kinds: &mut [Option<Kind>], r: Range<usize>, k: Option<Kind>) {
     }
 }
 
-/// The kind of every byte. Elements come in document order, the outer before
-/// the inner, so the inner one's colour wins.
-fn paint(text: &str) -> Vec<Option<Kind>> {
+/// The kind of every byte, and the hard breaks made of trailing spaces (the
+/// spaces' bytes, in order). Elements come in document order, the outer
+/// before the inner, so the inner one's colour wins.
+fn paint(text: &str) -> (Vec<Option<Kind>>, Vec<Range<usize>>) {
     let mut kinds = vec![None; text.len()];
+    let mut breaks = Vec::new();
     // The fence being read: its stream (None for a language not known) and its content's pieces.
     let mut fence: Option<(Option<ito_syntax::Stream>, Vec<Range<usize>>)> = None;
     for (ev, r) in Parser::new_ext(text, ito_outline::options()).into_offset_iter() {
@@ -133,10 +149,38 @@ fn paint(text: &str) -> Vec<Option<Kind>> {
             Event::Rule => fill(&mut kinds, r, Some(Kind::Rule)),
             Event::TaskListMarker(_) => fill(&mut kinds, r, Some(Kind::Task)),
             Event::FootnoteReference(_) => fill(&mut kinds, r, Some(Kind::Link)),
+            // The break's bytes are the spaces and the line's end (`\r\n` or
+            // `\n`); a backslash break starts at its `\`.
+            Event::HardBreak if text.as_bytes().get(r.start) != Some(&b'\\') => {
+                let spaces = text[r.clone()].find(['\r', '\n']).unwrap_or(r.len());
+                if spaces > 0 {
+                    breaks.push(r.start..r.start + spaces);
+                }
+            }
             _ => {}
         }
     }
-    kinds
+    (kinds, breaks)
+}
+
+/// `ranges` (in order, none across a line's end) as `(line, bytes from the
+/// line's start)`.
+fn by_line(text: &str, ranges: &[Range<usize>]) -> Vec<(usize, Range<usize>)> {
+    let bytes = text.as_bytes();
+    let (mut line, mut start, mut at) = (0, 0, 0);
+    let mut out = Vec::with_capacity(ranges.len());
+    for r in ranges {
+        let to = r.start.clamp(at, bytes.len());
+        for (i, &b) in bytes[at..to].iter().enumerate() {
+            if b == b'\n' {
+                line += 1;
+                start = at + i + 1;
+            }
+        }
+        at = to;
+        out.push((line, r.start.saturating_sub(start)..r.end.saturating_sub(start)));
+    }
+    out
 }
 
 /// A fence's content: the source bytes of its pieces (a quote's `>` left
@@ -314,6 +358,36 @@ mod tests {
         assert_eq!(t.headings.len(), 1);
         assert_eq!(runs(text, &t, 1), [("title: x", Kind::Meta)]);
         assert_eq!(runs(text, &t, 4), [("## Real", Kind::Heading)]);
+    }
+
+    /// 8.10: Two spaces at the end of a paragraph's line are a hard break and
+    /// are found, with CRLF line ends too and in a quote or a list; at a
+    /// paragraph's end, in a fence, an indented block or a heading they do
+    /// nothing and are not; a backslash break shows and is left alone.
+    #[test]
+    fn trailing_spaces_are_found_only_where_they_break_the_line() {
+        // The breaks as (line, the marked text).
+        fn found(text: &str) -> Vec<(usize, &str)> {
+            let t = read(1, text);
+            t.breaks.iter().map(|(n, r)| (*n, &text.split('\n').nth(*n).unwrap()[r.clone()])).collect()
+        }
+        assert_eq!(found("one  \ntwo\n"), [(0, "  ")]);
+        assert_eq!(found("日本語   \nつづき"), [(0, "   ")], "three spaces after Japanese, no break at the end");
+        assert_eq!(found("one \t\ntwo\n"), [(0, " \t")], "a tab counts as the parser counts it");
+        assert_eq!(found("one \ntwo\n"), [], "one space is a soft break");
+        assert_eq!(found("one\\\ntwo\n"), [], "a backslash break shows already");
+        assert_eq!(found("para  \n\nnext  \n"), [], "at a paragraph's end the spaces do nothing");
+        assert_eq!(found("last  "), [], "nor at the text's end");
+        assert_eq!(found("```\ncode  \nmore\n```\n"), [], "not in a fence");
+        assert_eq!(found("    code  \n    more\n"), [], "not in an indented block");
+        assert_eq!(found("# Title  \ntext\n"), [], "not after a heading");
+        assert_eq!(found("> quote  \n> more\n- item  \n  more\n"), [(0, "  "), (2, "  ")]);
+        assert_eq!(found("a  \r\nb  \r\nc\r\n"), [(0, "  "), (1, "  ")], "CRLF: the `\\r` is not a space");
+
+        let t = read(1, "x\n\na  \nb");
+        assert_eq!(t.hard_break(2), Some(1..3));
+        assert_eq!(t.hard_break(0), None);
+        assert_eq!(t.hard_break(9), None);
     }
 
     #[test]

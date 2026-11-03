@@ -5,12 +5,18 @@
 //! Only the lines in view are laid out, from the colours the structure worker
 //! last read. Those may be a version behind the text; a run is cut to the
 //! line and to a character boundary, so old colours never split a character.
+//!
+//! Two things that break a Markdown layout without showing are marked,
+//! quietly: a full-width space (a thin box where it is) and the spaces at a
+//! line's end that make a hard break (a faint fill with a dot per space).
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use egui::text::{CCursor, LayoutJob, TextFormat};
-use egui::{pos2, vec2, Align2, Color32, Event, FontId, Galley, Id, Rect, Sense, Stroke, Ui, Vec2};
+use egui::{pos2, vec2, Align2, Color32, Event, FontId, Galley, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use ito_textbuf::pos;
+use ito_theme::mix;
 
 use crate::engine::Editor;
 use crate::structure::Tree;
@@ -236,10 +242,29 @@ impl View {
         let gutter_painter = ui.painter_at(rect);
         let painter = ui.painter_at(text_rect);
         let origin_x = text_left - self.scroll.x;
+        let look = MarkColours::of(&c);
         for (i, l) in lines.iter().enumerate() {
             let y = y0 + i as f32 * row_h;
             let number = if l.n == caret_line { c.fg } else { c.dim };
             gutter_painter.text(pos2(text_rect.left() - PAD, y), Align2::RIGHT_TOP, (l.n + 1).to_string(), font.clone(), number);
+            let line = &text[l.start..l.end];
+            let marks = marks(line, tree.and_then(|t| t.hard_break(l.n)));
+            // The x of the boundary before character `ch`. The composition
+            // sits at a boundary: what starts there, or ends after it, is
+            // drawn to its right.
+            let ime = l.ime.map(|(at, len)| (pos::char_of_byte(line, at), len));
+            let gx = |ch: usize, end: bool| {
+                let shift = match ime {
+                    Some((at, len)) if ch > at || (ch == at && !end) => len,
+                    _ => 0,
+                };
+                origin_x + l.galley.pos_from_cursor(CCursor::new(ch + shift)).min.x
+            };
+            // Under the selection, so a selected break reads as selected.
+            if let Some(r) = &marks.brk {
+                let (x0, x1) = (gx(r.start, false), gx(r.end, true));
+                painter.rect_filled(Rect::from_min_max(pos2(x0, y), pos2(x1, y + row_h)), 2.0, look.fill);
+            }
             if !sel.is_empty() && sel.start <= l.end && sel.end > l.start {
                 let s = sel.start.clamp(l.start, l.end);
                 let e = sel.end.clamp(l.start, l.end);
@@ -251,6 +276,21 @@ impl View {
                 }
             }
             painter.galley(pos2(origin_x, y), l.galley.clone(), c.fg);
+            if let Some(r) = &marks.brk {
+                for ch in r.clone() {
+                    let x = (gx(ch, false) + gx(ch + 1, true)) / 2.0;
+                    painter.circle_filled(pos2(x, y + row_h / 2.0), 1.25, look.dot);
+                }
+            }
+            for &ch in &marks.wide {
+                let (x0, x1) = (gx(ch, false), gx(ch + 1, true));
+                if x1 < text_rect.left() || x0 > text_rect.right() {
+                    continue;
+                }
+                let side = ((x1 - x0).min(row_h) - 4.0).max(3.0);
+                let cell = Rect::from_center_size(pos2((x0 + x1) / 2.0, y + row_h / 2.0), vec2(side, side));
+                painter.rect_stroke(cell, 1.5, Stroke::new(1.0, look.wide), StrokeKind::Inside);
+            }
             if l.n == caret_line {
                 let x = origin_x + l.x(text, caret, true);
                 let bar = Rect::from_min_size(pos2(x - 1.0, y), vec2(2.0, row_h));
@@ -315,6 +355,59 @@ fn layout(
     job
 }
 
+/// What to mark on a line, in characters from its start.
+#[derive(Debug, Default, PartialEq)]
+struct Marks {
+    /// The full-width spaces (U+3000).
+    wide: Vec<usize>,
+    /// The spaces (and tabs) at the end that make a hard break.
+    brk: Option<Range<usize>>,
+}
+
+/// The marks of `line`.
+///
+/// The full-width spaces are found here, in the lines being painted only:
+/// that is a byte search, never a parse, and always right for the text as it
+/// is now, so a space typed this frame is marked this frame.
+///
+/// A hard break needs the parser, so `brk` is where the structure worker last
+/// read one (bytes from the line's start). That reading may be older than the
+/// line; it is kept only while its start still begins spaces and tabs that
+/// run to the line's end (so it is on a character boundary), and then covers
+/// all of them. Otherwise the line goes unmarked until the next reading.
+fn marks(line: &str, brk: Option<Range<usize>>) -> Marks {
+    let bytes = line.as_bytes();
+    let blank = |b: &u8| *b == b' ' || *b == b'\t';
+    let brk = brk.map(|r| r.start).filter(|&s| s < bytes.len() && bytes[s..].iter().all(blank)).map(|s| {
+        let from = line[..s].chars().count();
+        from..from + (bytes.len() - s)
+    });
+    let wide = if line.contains('\u{3000}') {
+        line.chars().enumerate().filter(|&(_, c)| c == '\u{3000}').map(|(i, _)| i).collect()
+    } else {
+        Vec::new()
+    };
+    Marks { wide, brk }
+}
+
+/// The marks' colours: from the theme, a step quieter than the text, so they
+/// are seen when looked for and not read as text.
+struct MarkColours {
+    /// A full-width space's thin box.
+    wide: Color32,
+    /// The fill under a hard break's spaces: the background with a little
+    /// gold (the theme's colour for what waits for a person).
+    fill: Color32,
+    /// A dot on each of those spaces.
+    dot: Color32,
+}
+
+impl MarkColours {
+    fn of(c: &ito_theme::Colors) -> MarkColours {
+        MarkColours { wide: mix(c.dim, c.bg, 0.4), fill: mix(c.bg, c.wait, 0.12), dot: mix(c.wait, c.bg, 0.3) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,5 +442,44 @@ mod tests {
         assert_eq!(texts(&job), ["ab", "x"], "at the end of the line");
         let job = layout("", None, &c, &plain, Some((0, "x", &ime)));
         assert_eq!(texts(&job), ["x"]);
+    }
+
+    /// 8.10: A full-width space is marked where it is, by character, among
+    /// characters of other widths; a hard break's spaces are marked from the
+    /// reading, and a reading the text has moved away from never marks text.
+    #[test]
+    fn full_width_spaces_and_hard_breaks_are_marked_by_character() {
+        assert_eq!(marks("", None), Marks::default());
+        assert_eq!(marks("a\u{3000}b", None).wide, [1]);
+        assert_eq!(marks("\u{3000}日本\u{3000}👍🏽\u{3000}", None).wide, [0, 3, 6], "the emoji and its tone are two characters");
+        assert_eq!(marks("a b", None).wide, Vec::<usize>::new(), "a plain space is not marked");
+
+        // The reading as it was made: "日本" is two characters, six bytes.
+        assert_eq!(marks("日本  ", Some(6..8)).brk, Some(2..4));
+        assert_eq!(marks("x\u{3000}  ", Some(4..6)), Marks { wide: vec![1], brk: Some(2..4) });
+        // The text moved on since.
+        assert_eq!(marks("日本   ", Some(6..8)).brk, Some(2..5), "a space typed at the end is in the run");
+        assert_eq!(marks("日本  x", Some(6..8)).brk, None, "the line no longer ends in the spaces");
+        assert_eq!(marks("日本", Some(6..8)).brk, None, "the spaces are gone");
+        assert_eq!(marks("日", Some(6..8)).brk, None, "the line is shorter than the reading");
+        assert_eq!(marks("本本本", Some(4..6)).brk, None, "the reading points inside a character");
+        assert_eq!(marks("ab  ", Some(4..4)).brk, None, "nothing at the end");
+    }
+
+    /// The marks are quieter than the dim text and still seen, in every theme
+    /// ito ships, light or dark; the fill is only a tint.
+    #[test]
+    fn the_marks_are_quiet_but_seen_in_every_theme() {
+        for t in ito_theme::builtin() {
+            let c = &t.colors;
+            let look = MarkColours::of(c);
+            let dim = ito_theme::contrast(c.dim, c.bg);
+            let wide = ito_theme::contrast(look.wide, c.bg);
+            assert!(wide > 2.0 && wide < dim, "{}: the box {wide:.2}, the dim text {dim:.2}", t.name);
+            let fill = ito_theme::contrast(look.fill, c.bg);
+            assert!(fill > 1.1 && fill < 1.5, "{}: the fill {fill:.2}", t.name);
+            let dot = ito_theme::contrast(look.dot, look.fill);
+            assert!(dot > 1.8 && dot < dim, "{}: the dots {dot:.2}, the dim text {dim:.2}", t.name);
+        }
     }
 }

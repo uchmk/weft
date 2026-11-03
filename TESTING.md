@@ -84,6 +84,7 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 | 8.6 | With changes not saved, press `Ctrl+Q` (or the close button); press `Esc`; press `Ctrl+Q` again and `N`; then, with changes again, `Ctrl+Q` and `Enter` | A question "Unsaved changes" with Cancel (Esc), Quit without saving (N) and Save and quit (Enter); `Esc` keeps the window, `N` closes it without writing, `Enter` writes the file and then closes |
 | 8.7 | Open a file with headings, `**bold**`, `` `code` ``, a task list and a ` ```rust ` fence; type quickly in a long file | Headings, emphasis, code, the list markers and the Rust code have their colours; typing never waits for them (the old colours stay until the new reading comes) |
 | 8.8 | Type Japanese with the IME on, then press `Enter` to commit | The text being composed shows at the caret, the candidate window sits by the caret; the `Enter` commits and does not break the line |
+| 8.10 | Type full-width spaces (`　`) between words; end a paragraph's line with two spaces and go on on the next line; end a paragraph's last line, a heading and a line in a ` ``` ` fence with two spaces too; look in a light and a dark theme | Each full-width space has a thin, faint box where it is; the two spaces that break the paragraph's line have a faint gold tint with a small dot on each, the others none (and a `\` break none); the marks are quieter than the text in both themes, and typing never waits for them |
 
 ## 9. The external editor and key scripts
 
