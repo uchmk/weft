@@ -112,6 +112,12 @@ impl View {
         self.ime.swallow_keys(ctx);
     }
 
+    /// Whether the input method is composing in the document, as of the
+    /// last frame (for the status bar).
+    pub fn composing(&self, ctx: &egui::Context) -> bool {
+        self.ime.composing(ctx)
+    }
+
     /// Draw `ed` in what is left of `ui`. With `keys` the document has the
     /// keys: typing, the input method, copy and paste and the mouse go to it.
     pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, keys: bool, now_ms: u64) {

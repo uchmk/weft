@@ -127,6 +127,12 @@ nothing = "{0}: ここでは何もできません"
 
 [status]
 line_col = "{0} 行 {1} 列"
+chars = "{0} 文字"
+selected = "選択 {0} 文字"
+pending = "…"
+utf8 = "UTF-8"
+not_utf8 = "UTF-8 以外"
+composing = "変換中"
 lf = "LF"
 crlf = "CRLF"
 mixed = "改行コードが混在"
