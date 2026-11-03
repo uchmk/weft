@@ -63,12 +63,19 @@ pub struct Editor {
     /// The last format command put emphasis markers where CommonMark may not
     /// read them as emphasis (next to punctuation); the app says so once.
     unflanked: bool,
+    /// The selections `expand_selection` grew from, the last one innermost,
+    /// so `shrink_selection` goes back the same way.
+    grown: Vec<Selection>,
+    /// The version and the selection the last grow or shrink left. When
+    /// either has changed since (an edit, an undo, a caret move), `grown`
+    /// belongs to another selection and is dropped.
+    grown_at: Option<(u64, Selection)>,
 }
 
 impl Editor {
     /// A document of `text` with no file behind it.
     pub fn new(text: &str) -> Editor {
-        Editor { doc: Doc::new(text), path: None, locked: None, goal: None, unflanked: false }
+        Editor { doc: Doc::new(text), path: None, locked: None, goal: None, unflanked: false, grown: Vec::new(), grown_at: None }
     }
 
     /// Read `path`. A file that is not there yet opens empty (saving creates
@@ -209,6 +216,84 @@ impl Editor {
         }
         let anchor = if extend { sel.anchor } else { to };
         self.doc.set_selection(Selection { anchor, head: to });
+    }
+
+    /// Put the caret where `find` says from the caret (ito-mdedit's `next`:
+    /// the next heading, list, table, ...), dropping the selection. Only the
+    /// caret moves, so it works on a read-only file too. `false` when there
+    /// is nowhere to go.
+    pub fn jump(&mut self, find: impl FnOnce(&str, usize) -> Option<usize>) -> bool {
+        let before = self.doc.selection();
+        let Some(to) = find(self.text(), before.head) else { return false };
+        self.set_caret(pos::floor(self.text(), to), false);
+        self.doc.selection() != before
+    }
+
+    // ------------------------------------------------------------ structural selection
+
+    /// Grow the selection to the next structure around it (ito-mdedit's
+    /// `expand_selection`): the word, the sentence, each thing it sits in
+    /// (emphasis, cell, row, paragraph, item, list, quote, code block), the
+    /// section, the parent sections, the whole text. The caret stays at the
+    /// end it was at; a bare caret grows forward, to the end. The selection it
+    /// grew from is kept, so `shrink_selection` goes back the same way. Only
+    /// the selection changes, so it works on a read-only file too. `false` at
+    /// the whole text.
+    pub fn expand_selection(&mut self) -> bool {
+        let before = self.doc.selection();
+        if !self.grown_holds(before) {
+            self.grown.clear();
+        }
+        let text = self.text();
+        let r = before.range();
+        let Some(to) = ito_mdedit::expand_selection(text, pos::floor(text, r.start)..pos::floor(text, r.end)) else {
+            return false;
+        };
+        let after = facing(before, whole_graphemes(text, to));
+        self.grown.push(before);
+        self.select_grown(after);
+        true
+    }
+
+    /// Go back one step of `expand_selection`: the selection it grew from,
+    /// as it was (the caret where it stood). When the text or the selection
+    /// changed since the last grow, that way back is gone; the selection then
+    /// shrinks to the largest structure inside it that starts where it starts
+    /// (ito-mdedit's `shrink_selection`), in the direction it had. `false`
+    /// when there is nothing smaller.
+    pub fn shrink_selection(&mut self) -> bool {
+        let before = self.doc.selection();
+        if self.grown_holds(before) {
+            if let Some(back) = self.grown.pop() {
+                self.select_grown(back);
+                return true;
+            }
+        }
+        self.grown.clear();
+        self.grown_at = None;
+        let text = self.text();
+        let r = before.range();
+        let Some(to) = ito_mdedit::shrink_selection(text, pos::floor(text, r.start)..pos::floor(text, r.end)) else {
+            return false;
+        };
+        let after = facing(before, whole_graphemes(text, to));
+        if after.range() == r {
+            return false;
+        }
+        self.doc.set_selection(after);
+        self.goal = None;
+        true
+    }
+
+    /// Whether the steps in `grown` lead to `sel` in the text as it is now.
+    fn grown_holds(&self, sel: Selection) -> bool {
+        self.grown_at == Some((self.doc.version(), sel))
+    }
+
+    fn select_grown(&mut self, sel: Selection) {
+        self.doc.set_selection(sel);
+        self.goal = None;
+        self.grown_at = Some((self.doc.version(), sel));
     }
 
     /// Where `lines` lines down (up when negative) lands, at the goal column.
@@ -401,6 +486,28 @@ impl Editor {
             self.doc.mark_saved();
         }
     }
+}
+
+/// `r` as a selection facing the way `like` faces: the caret at the start
+/// when `like` was made backwards, at the end otherwise (a bare caret too).
+fn facing(like: Selection, r: Range<usize>) -> Selection {
+    if like.head < like.anchor {
+        Selection { anchor: r.end, head: r.start }
+    } else {
+        Selection { anchor: r.start, head: r.end }
+    }
+}
+
+/// `r` widened to whole grapheme clusters, so neither end splits one (a
+/// mark after a full stop, an emoji with a skin tone).
+fn whole_graphemes(text: &str, r: Range<usize>) -> Range<usize> {
+    let start_of = |b: usize| pos::next_grapheme(text, b).and_then(|n| pos::prev_grapheme(text, n)).unwrap_or(b);
+    let start = start_of(r.start);
+    let end = match start_of(r.end) {
+        e if e == r.end => e,
+        e => pos::next_grapheme(text, e).unwrap_or(text.len()),
+    };
+    start..end
 }
 
 /// Write a save job: beside the file first, then over it.

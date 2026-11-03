@@ -1,6 +1,6 @@
 # Checklist
 
-74 checks in TESTING.md, 49 left for a person.
+83 checks in TESTING.md, 49 left for a person.
 
 ## 1. Start
 
@@ -98,3 +98,7 @@
 
 - [ ] **10.11** Put the caret in a word and run "Toggle italic", "Toggle inline code" and "Toggle strikethrough" (each again to take it off); select a word and run "Toggle a link" → The word gets `*…*`, `` `…` `` and `~~…~~` with their colours; the link is `[word]()` with the caret between the parentheses, ready for the address 〔未訳〕
 - [ ] **10.13** On a JIS keyboard, with the IME off, select a word and press `Ctrl+B`, `Ctrl+I`, `Ctrl+Shift+@` and `Ctrl+K` (each but the link twice); press `Ctrl+2` twice on a line, `Ctrl+@` over two lines, `Ctrl+Shift+]` and `Ctrl+Shift+[` over two lines; then the same on a US keyboard with `` Ctrl+` `` and `Ctrl+[`; open the key help (`F1`) and the palette → Each key does what its command does in 10.1–10.11 (the second `Ctrl+2` makes the line a paragraph again) and types nothing; the key help and the palette list each key by its command 〔未訳〕
+
+## 11. Structure commands — 全 9 件が自動
+
+`cargo test` が全部見ているので、押すものはありません。
