@@ -656,12 +656,16 @@ impl App {
                 ed.line_count(),
             ));
             // Counted here, not taken from the reading: a state must say the text as it is.
+            // A file that is not UTF-8 has no count, as in the status bar: its
+            // text is a lossy decoding, not what the file says.
             let text = ed.text();
-            out.push_str(&format!(
-                "chars: {}\nselected_chars: {}\n",
-                count::count(text, 0..text.len()),
-                count::count(text, ed.selection().range()),
-            ));
+            if ed.locked() != Some(engine::Locked::NotUtf8) {
+                out.push_str(&format!(
+                    "chars: {}\nselected_chars: {}\n",
+                    count::count(text, 0..text.len()),
+                    count::count(text, ed.selection().range()),
+                ));
+            }
             // The text on one line, as Rust writes a string, cut short.
             let text: String = ed.text().escape_debug().take(400).collect();
             out.push_str(&format!("text: {text}\n"));
@@ -876,7 +880,10 @@ impl App {
     /// the input method composing (`composing`) and how the file is written
     /// (its encoding, a BOM, its line ends). The document's count is the
     /// newest reading's, so no key waits for it; the selection's is counted
-    /// only when the selection or the text changes.
+    /// from the reading of this text, whatever its size, or, while the
+    /// reading is behind, walked only when short and otherwise pending
+    /// (`count::Selected`). A file that is not UTF-8 shows no count: its text
+    /// is a lossy decoding, not what the file says.
     fn status_items(&mut self, composing: bool) -> (StatusItems, StatusItems) {
         let c = ito_theme::colors();
         let mut left = StatusItems::new();
@@ -885,14 +892,17 @@ impl App {
             let t = &self.table;
             let (line, col) = ed.line_col();
             left.push((t.trf("status.line_col", &[&(line + 1).to_string(), &(col + 1).to_string()]), c.fg));
+            let counted = ed.locked() != Some(engine::Locked::NotUtf8);
             let sel = ed.selection();
-            if !sel.is_empty() {
-                // A selection of everything is the reading's count, when it is of this text.
-                let whole = self.tree.as_ref().filter(|tree| tree.version == ed.version()).map(|tree| tree.chars);
-                let n = self.selected.count(ed.version(), ed.text(), sel.range(), whole);
-                left.push((t.trf("status.selected", &[&n.to_string()]), c.fg));
+            if counted && !sel.is_empty() {
+                let reading = self.tree.as_ref().filter(|tree| tree.version == ed.version()).map(|tree| &tree.counts);
+                let n = match self.selected.count(ed.version(), ed.text(), sel.range(), reading) {
+                    Some(n) => n.to_string(),
+                    None => t.tr("status.pending").to_owned(),
+                };
+                left.push((t.trf("status.selected", &[&n]), c.fg));
             }
-            if let Some(tree) = &self.tree {
+            if let Some(tree) = self.tree.as_ref().filter(|_| counted) {
                 left.push((t.trf("status.chars", &[&tree.chars.to_string()]), c.dim));
             }
             if let Some(s) = self.section() {
@@ -1413,6 +1423,88 @@ mod tests {
         assert!(words(&left).contains(&"Read-only".to_owned()), "{left:?}");
         assert_eq!(words(&right), ["Not UTF-8", "LF"]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 8.9: A file that is not UTF-8 shows no count, in the bar or in a
+    /// `--keys` state, even with a reading and a selection: its text is a
+    /// lossy decoding, which reads `あい` in Shift_JIS as more characters
+    /// than it has.
+    #[test]
+    fn a_file_that_is_not_utf8_shows_no_count() {
+        let words = |items: &StatusItems| items.iter().map(|(s, _)| s.clone()).collect::<Vec<_>>();
+        let dir = std::env::temp_dir().join(format!("weft-sjis-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("sjis.md");
+        // `あい\n# 見出し\n` in Shift_JIS: 7 characters.
+        std::fs::write(&file, b"\x82\xa0\x82\xa2\n# \x8c\xa9\x8f\x6f\x82\xb5\n").unwrap();
+        let mut app = App::for_tests();
+        app.open(&file);
+        let ed = app.editor.as_mut().unwrap();
+        assert_eq!(ed.locked(), Some(engine::Locked::NotUtf8));
+        ed.select_all();
+        app.tree = Some(structure::read(ed.version(), ed.text()));
+        let (left, right) = app.status_items(false);
+        let left = words(&left);
+        assert!(!left.iter().any(|s| s.starts_with("Chars") || s.starts_with("Selected")), "{left:?}");
+        assert!(left.contains(&"Read-only".to_owned()), "{left:?}");
+        assert_eq!(words(&right), ["Not UTF-8", "LF"]);
+        let report = app.report();
+        assert!(report.contains("locked: true\n"), "{report}");
+        assert!(!report.contains("chars:"), "{report}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 8.9: A large selection's count comes from the reading of the text as
+    /// it is, without walking the selection on the UI thread; while the
+    /// reading is behind (Ctrl+A before it comes, an undo that brings a
+    /// large selection back) the bar says the count is pending, and walks
+    /// nothing either.
+    #[test]
+    fn a_large_selection_is_counted_from_the_reading_or_shown_pending() {
+        let words = |items: &StatusItems| items.iter().map(|(s, _)| s.clone()).collect::<Vec<_>>();
+        let line = "# 見出し\r\n\r\n日本語の文。👍🏽 e\u{301} 👨‍👩‍👧\r\n";
+        let text = line.repeat((256 << 10) / line.len() + 1);
+        // A reading of the text as it is now, as the worker makes it (with no headings or colours).
+        let reading = |app: &App| {
+            let ed = app.editor.as_ref().unwrap();
+            let counts = count::Index::new(ed.text());
+            let (version, chars) = (ed.version(), counts.total());
+            structure::Tree { version, headings: Vec::new(), lines: Vec::new(), breaks: Vec::new(), chars, counts }
+        };
+        let near = 2 * (count::STEP + 64);
+        let mut app = App::for_tests();
+        app.editor = Some(engine::Editor::new(&text));
+        app.editor.as_mut().unwrap().select_all();
+        let ((left, _), walk) = count::walked(|| app.status_items(false));
+        assert!(words(&left).contains(&"Selected …".to_owned()), "Ctrl+A before the reading: {left:?}");
+        assert_eq!(walk, 0);
+
+        app.tree = Some(reading(&app));
+        let ((left, _), walk) = count::walked(|| app.status_items(false));
+        let all = count::count(&text, 0..text.len());
+        assert!(words(&left).contains(&format!("Selected {all}")), "the reading came: {left:?}");
+        assert!(walk <= near, "walked {walk} bytes");
+
+        let ed = app.editor.as_mut().unwrap();
+        ed.set_caret(line.len() + 2, false);
+        ed.move_caret(engine::Motion::DocEnd, true);
+        let ((left, _), walk) = count::walked(|| app.status_items(false));
+        let n = count::count(&text, line.len() + 2..text.len());
+        assert!(words(&left).contains(&format!("Selected {n}")), "Ctrl+Shift+End: {left:?}");
+        assert!(walk <= near, "walked {walk} bytes");
+
+        // Typed over, then undone: the selection is back, the reading behind.
+        let ed = app.editor.as_mut().unwrap();
+        assert!(ed.insert("x", 0));
+        assert!(ed.undo());
+        assert_eq!(ed.selection().range(), line.len() + 2..text.len());
+        assert_ne!(Some(ed.version()), app.tree.as_ref().map(|t| t.version));
+        let ((left, _), walk) = count::walked(|| app.status_items(false));
+        assert!(words(&left).contains(&"Selected …".to_owned()), "an edit with the selection kept: {left:?}");
+        assert_eq!(walk, 0);
+        app.tree = Some(reading(&app));
+        let (left, _) = app.status_items(false);
+        assert!(words(&left).contains(&format!("Selected {n}")), "{left:?}");
     }
 
     /// 8.6: Quitting with changes not saved asks first; Esc stays, N goes

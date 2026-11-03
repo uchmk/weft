@@ -1,7 +1,8 @@
 //! The structure of the document, read off the UI thread: the headings
 //! (ito-outline), the colour of every byte, by line, the trailing spaces that
 //! make a hard line break, with the options Markdown is read with in uchmk,
-//! and the count of characters the status bar shows. Each reading carries the
+//! and the count of characters the status bar shows (with an index to count a
+//! selection from). Each reading carries the
 //! version of the text it was read from; the worker drops jobs a newer one
 //! overtook, and the window keeps the colours it has until a newer reading
 //! comes back.
@@ -78,6 +79,9 @@ pub struct Tree {
     pub breaks: Vec<(usize, Range<usize>)>,
     /// The characters in the text, as the status bar counts them ([`crate::count`]).
     pub chars: usize,
+    /// Where the count stands through the text, so a selection of this
+    /// version is counted without walking it on the UI thread.
+    pub counts: crate::count::Index,
 }
 
 impl Tree {
@@ -91,12 +95,14 @@ impl Tree {
 /// Read `text` (at `version`) whole.
 pub fn read(version: u64, text: &str) -> Tree {
     let (kinds, breaks) = paint(text);
+    let counts = crate::count::Index::new(text);
     Tree {
         version,
         headings: ito_outline::headings(text, 6),
         lines: lines(text, &kinds),
         breaks: by_line(text, &breaks),
-        chars: crate::count::count(text, 0..text.len()),
+        chars: counts.total(),
+        counts,
     }
 }
 

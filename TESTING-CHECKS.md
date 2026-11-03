@@ -1,6 +1,6 @@
 # Checklist
 
-46 checks in TESTING.md, 39 left for a person.
+48 checks in TESTING.md, 41 left for a person.
 
 ## 1. Start
 
@@ -71,6 +71,8 @@
 - [ ] **8.5** Open a Shift_JIS file → The bell says it is not UTF-8 and opened read-only; the status bar says "Read-only" and, by the clock, "Not UTF-8"; typing changes nothing and `Ctrl+S` writes nothing 〔未訳〕
 - [ ] **8.7** Open a file with headings, `**bold**`, `` `code` ``, a task list and a ` ```rust ` fence; type quickly in a long file → Headings, emphasis, code, the list markers and the Rust code have their colours; typing never waits for them (the old colours stay until the new reading comes) 〔未訳〕
 - [ ] **8.8** Type Japanese with the IME on, then press `Enter` to commit → The text being composed shows at the caret, the candidate window sits by the caret, and the status bar says "Composing" by the clock until it is committed; the `Enter` commits and does not break the line 〔未訳〕
+- [ ] **8.12** Open a `.md` of about 8 MB (a few lines copied over and over); type quickly; press `Ctrl+A`; press `Ctrl+Home`, then `Ctrl+Shift+End`; type over the selection, then press `Ctrl+Z` → No key hitches: each shows at once. The document's count stays the old one until the new reading comes; "Selected" shows the selection's count, or "Selected …" until the reading comes and then the count (after `Ctrl+Z` the selection is back, and its count with it) 〔未訳〕
+- [ ] **8.13** Look at the full-width spaces and the hard-break marks of 8.10 in a light and a dark theme; type quickly in a long file that has them → The marks are seen but quieter than the text in both themes; typing never waits for them 〔未訳〕
 
 ## 9. The external editor and key scripts
 

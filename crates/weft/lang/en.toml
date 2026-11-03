@@ -132,6 +132,8 @@ line_col = "Ln {0}, Col {1}"
 # Characters: graphemes, line breaks not counted.
 chars = "Chars {0}"
 selected = "Selected {0}"
+# In place of the selection's count while it waits for the reading of a large text.
+pending = "…"
 utf8 = "UTF-8"
 not_utf8 = "Not UTF-8"
 # The input method is composing.
