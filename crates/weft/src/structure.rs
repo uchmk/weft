@@ -1,9 +1,10 @@
 //! The structure of the document, read off the UI thread: the headings
-//! (ito-outline), the colour of every byte, by line, and the trailing spaces
-//! that make a hard line break, with the options Markdown is read with in
-//! uchmk. Each reading carries the version of the text it was read from; the
-//! worker drops jobs a newer one overtook, and the window keeps the colours it
-//! has until a newer reading comes back.
+//! (ito-outline), the colour of every byte, by line, the trailing spaces that
+//! make a hard line break, with the options Markdown is read with in uchmk,
+//! and the count of characters the status bar shows. Each reading carries the
+//! version of the text it was read from; the worker drops jobs a newer one
+//! overtook, and the window keeps the colours it has until a newer reading
+//! comes back.
 
 use std::ops::Range;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -75,6 +76,8 @@ pub struct Tree {
     /// from the line's start)`, by line, one at most per line. A backslash
     /// break is left out, as it shows.
     pub breaks: Vec<(usize, Range<usize>)>,
+    /// The characters in the text, as the status bar counts them ([`crate::count`]).
+    pub chars: usize,
 }
 
 impl Tree {
@@ -88,7 +91,13 @@ impl Tree {
 /// Read `text` (at `version`) whole.
 pub fn read(version: u64, text: &str) -> Tree {
     let (kinds, breaks) = paint(text);
-    Tree { version, headings: ito_outline::headings(text, 6), lines: lines(text, &kinds), breaks: by_line(text, &breaks) }
+    Tree {
+        version,
+        headings: ito_outline::headings(text, 6),
+        lines: lines(text, &kinds),
+        breaks: by_line(text, &breaks),
+        chars: crate::count::count(text, 0..text.len()),
+    }
 }
 
 fn fill(kinds: &mut [Option<Kind>], r: Range<usize>, k: Option<Kind>) {
@@ -408,6 +417,15 @@ mod tests {
         let t = last.unwrap();
         assert_eq!(t.version, 2);
         assert_eq!(t.headings.len(), 1, "read from the text of version 2");
+        assert_eq!(t.chars, 3, "and counted from it");
         assert!(w.take().is_none());
+    }
+
+    /// 8.9: each reading counts the characters of its text, the line breaks
+    /// left out, so the status bar shows the count without counting on a key.
+    #[test]
+    fn a_reading_counts_the_characters_of_its_text() {
+        assert_eq!(read(1, "").chars, 0);
+        assert_eq!(read(1, "# 見出し\r\n\r\n👍🏽 e\u{301}\r\n").chars, 8);
     }
 }

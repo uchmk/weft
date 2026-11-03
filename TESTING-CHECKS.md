@@ -1,6 +1,6 @@
 # Checklist
 
-45 checks in TESTING.md, 39 left for a person.
+46 checks in TESTING.md, 39 left for a person.
 
 ## 1. Start
 
@@ -62,18 +62,18 @@
 
 ## 8. Editing
 
-自動テスト済みなので下には出していない: 8.6, 8.10
+自動テスト済みなので下には出していない: 8.6, 8.9, 8.10
 
-- [ ] **8.1** Run `weft FILE.md` on a file with CRLF line ends and a BOM; move with `←` `→` over `é`, `漢字` and `👍🏽` → The caret steps over a whole character each time (the emoji with its skin tone is one); the status bar says the line and column, `CRLF` and `BOM` 〔未訳〕
+- [ ] **8.1** Run `weft FILE.md` on a file with CRLF line ends and a BOM; move with `←` `→` over `é`, `漢字` and `👍🏽` → The caret steps over a whole character each time (the emoji with its skin tone is one); the status bar says the line and column and, by the clock, `UTF-8`, `BOM` and `CRLF` 〔未訳〕
 - [ ] **8.2** Type a word, press `Enter`, type another; press `Ctrl+Z` three times, then `Ctrl+Y`; press `Backspace` three times quickly, then `Ctrl+Z` → The status bar says "Unsaved"; each `Ctrl+Z` takes back one step (the second word, the line break, the first word), and "Unsaved" goes once the text is back as it was read; `Ctrl+Y` puts the first word back. The three `Backspace`s come back with one `Ctrl+Z` 〔未訳〕
 - [ ] **8.3** In a file with headings, a list and a paragraph: `Alt+↓` on the paragraph, `Alt+↓` on a list item that has items under it, `Ctrl+Enter` on a list item, `Alt+Shift+→` on a heading → The paragraph moves under the next block; the item goes under the next item of its list with the items under it (the numbers of a numbered list stay in order); the item gets `[ ]`; the heading and the headings under it go one level down. One `Ctrl+Z` puts each back whole 〔未訳〕
 - [ ] **8.4** Press `Ctrl+S`, then look at the file in a hex viewer → "Unsaved" goes and the status bar says it saved; the file still starts with the BOM and every line ends in CRLF 〔未訳〕
-- [ ] **8.5** Open a Shift_JIS file → The bell says it is not UTF-8 and opened read-only; the status bar says "Read-only"; typing changes nothing and `Ctrl+S` writes nothing 〔未訳〕
+- [ ] **8.5** Open a Shift_JIS file → The bell says it is not UTF-8 and opened read-only; the status bar says "Read-only" and, by the clock, "Not UTF-8"; typing changes nothing and `Ctrl+S` writes nothing 〔未訳〕
 - [ ] **8.7** Open a file with headings, `**bold**`, `` `code` ``, a task list and a ` ```rust ` fence; type quickly in a long file → Headings, emphasis, code, the list markers and the Rust code have their colours; typing never waits for them (the old colours stay until the new reading comes) 〔未訳〕
-- [ ] **8.8** Type Japanese with the IME on, then press `Enter` to commit → The text being composed shows at the caret, the candidate window sits by the caret; the `Enter` commits and does not break the line 〔未訳〕
+- [ ] **8.8** Type Japanese with the IME on, then press `Enter` to commit → The text being composed shows at the caret, the candidate window sits by the caret, and the status bar says "Composing" by the clock until it is committed; the `Enter` commits and does not break the line 〔未訳〕
 
 ## 9. The external editor and key scripts
 
 - [ ] **9.1** Put the caret on line 3, column 5 and press `Ctrl+E` (with changes not saved) → The file is saved first, then the editor `[open]` names opens it at line 3, column 5 (at the line only, for an editor that takes no column) 〔未訳〕
 - [ ] **9.2** Press `Ctrl+E` with an editor that does not exist in `[open]` → The bell says the external editor could not be opened 〔未訳〕
-- [ ] **9.3** Run `weft FILE.md --keys "<C-End>x<State:typed><Quit>"` with `WEFT_KEYS_DONE` set → The state `typed` says `file`, `dirty: true`, `locked: false`, `caret` (line:column), `section` (the heading the caret is under), `lines`, `text` and `quit: no` 〔未訳〕
+- [ ] **9.3** Run `weft FILE.md --keys "<C-End>x<State:typed><Quit>"` with `WEFT_KEYS_DONE` set → The state `typed` says `file`, `dirty: true`, `locked: false`, `caret` (line:column), `section` (the heading the caret is under), `lines`, `chars` (the characters, line breaks left out), `selected_chars`, `text` and `quit: no` 〔未訳〕

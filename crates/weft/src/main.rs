@@ -14,6 +14,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod commands;
+mod count;
 mod engine;
 mod envreport;
 mod help;
@@ -141,6 +142,8 @@ struct App {
     /// The newest reading of the structure, and the thread that reads it.
     tree: Option<structure::Tree>,
     worker: structure::Worker,
+    /// The selection's character count for the status bar, kept between frames.
+    selected: count::Selected,
     /// The file thread's way in and out, and how many saves are on it.
     files: Sender<FileJob>,
     done: Receiver<FileDone>,
@@ -190,6 +193,9 @@ enum Command {
     Run(&'static str),
 }
 
+/// What one side of the status bar says: each item's words and colour.
+type StatusItems = Vec<(String, egui::Color32)>;
+
 impl App {
     fn new(cc: &eframe::CreationContext<'_>, saved: &Saved, script: Option<Runner>, file: Option<PathBuf>) -> Self {
         saved.put(cc);
@@ -237,6 +243,7 @@ impl App {
             view: view::View::default(),
             tree: None,
             worker: structure::Worker::new(move || wake.request_repaint()),
+            selected: count::Selected::default(),
             files,
             done,
             saving: 0,
@@ -273,6 +280,7 @@ impl App {
                 }
                 self.editor = Some(ed);
                 self.tree = None;
+                self.selected = count::Selected::default();
                 self.view = view::View::default();
             }
             Err(e) => {
@@ -300,6 +308,7 @@ impl App {
             view: view::View::default(),
             tree: None,
             worker: structure::Worker::new(|| {}),
+            selected: count::Selected::default(),
             files,
             done,
             saving: 0,
@@ -646,6 +655,13 @@ impl App {
                 col + 1,
                 ed.line_count(),
             ));
+            // Counted here, not taken from the reading: a state must say the text as it is.
+            let text = ed.text();
+            out.push_str(&format!(
+                "chars: {}\nselected_chars: {}\n",
+                count::count(text, 0..text.len()),
+                count::count(text, ed.selection().range()),
+            ));
             // The text on one line, as Rust writes a string, cut short.
             let text: String = ed.text().escape_debug().take(400).collect();
             out.push_str(&format!("text: {text}\n"));
@@ -829,29 +845,76 @@ impl App {
         errors
     }
 
-    /// The bottom bar: on the left the caret's line and column, the section
-    /// it is in, what is not saved yet and how the file is written (its line
-    /// endings, a BOM); the last thing done (a save, the scale) after them;
-    /// the clock from common.toml at the right end.
+    /// The bottom bar ([`App::status_items`]), the clock from common.toml at
+    /// the right end.
     fn status_bar(&mut self, ui: &mut egui::Ui) {
+        let composing = self.editing() && self.view.composing(ui.ctx());
+        let (left, right) = self.status_items(composing);
         let clock = self.prefs.common.clock_or(None);
         let spec = ito_statusbar::Spec { clock: &clock, lang: &self.lang, opacity: 1.0 };
+        ito_statusbar::show(
+            ui,
+            &spec,
+            |ui| {
+                for (s, color) in &left {
+                    ito_statusbar::item(ui, s, *color);
+                }
+            },
+            // The right side is laid out from the clock leftwards.
+            |ui| {
+                for (s, color) in right.iter().rev() {
+                    ito_statusbar::item(ui, s, *color);
+                }
+            },
+        );
+    }
+
+    /// What the status bar says, left and right, each in reading order. On
+    /// the left the caret's line and column, the characters selected and in
+    /// the document, the section the caret is in, what is not saved yet and
+    /// the last thing done (a save, the scale); on the right, by the clock,
+    /// the input method composing (`composing`) and how the file is written
+    /// (its encoding, a BOM, its line ends). The document's count is the
+    /// newest reading's, so no key waits for it; the selection's is counted
+    /// only when the selection or the text changes.
+    fn status_items(&mut self, composing: bool) -> (StatusItems, StatusItems) {
         let c = ito_theme::colors();
-        let t = &self.table;
-        let mut items: Vec<(String, egui::Color32)> = Vec::new();
+        let mut left = StatusItems::new();
+        let mut right = StatusItems::new();
         if let Some(ed) = &self.editor {
+            let t = &self.table;
             let (line, col) = ed.line_col();
-            items.push((t.trf("status.line_col", &[&(line + 1).to_string(), &(col + 1).to_string()]), c.fg));
+            left.push((t.trf("status.line_col", &[&(line + 1).to_string(), &(col + 1).to_string()]), c.fg));
+            let sel = ed.selection();
+            if !sel.is_empty() {
+                // A selection of everything is the reading's count, when it is of this text.
+                let whole = self.tree.as_ref().filter(|tree| tree.version == ed.version()).map(|tree| tree.chars);
+                let n = self.selected.count(ed.version(), ed.text(), sel.range(), whole);
+                left.push((t.trf("status.selected", &[&n.to_string()]), c.fg));
+            }
+            if let Some(tree) = &self.tree {
+                left.push((t.trf("status.chars", &[&tree.chars.to_string()]), c.dim));
+            }
             if let Some(s) = self.section() {
-                items.push((s, c.dim));
+                left.push((s, c.dim));
             }
             if ed.locked().is_some() {
-                items.push((t.tr("status.read_only").to_owned(), c.wait));
+                left.push((t.tr("status.read_only").to_owned(), c.wait));
             } else if ed.is_dirty() {
-                items.push((t.tr("status.unsaved").to_owned(), c.wait));
+                left.push((t.tr("status.unsaved").to_owned(), c.wait));
             }
             if self.saving > 0 {
-                items.push((t.tr("status.saving").to_owned(), c.dim));
+                left.push((t.tr("status.saving").to_owned(), c.dim));
+            }
+            if composing {
+                right.push((t.tr("status.composing").to_owned(), c.fg));
+            }
+            match ed.locked() {
+                Some(engine::Locked::NotUtf8) => right.push((t.tr("status.not_utf8").to_owned(), c.wait)),
+                None => right.push((t.tr("status.utf8").to_owned(), c.dim)),
+            }
+            if ed.bom() {
+                right.push((t.tr("status.bom").to_owned(), c.dim));
             }
             let eol = match ed.eol() {
                 ito_textbuf::Eol::Lf => Some("status.lf"),
@@ -860,25 +923,13 @@ impl App {
                 ito_textbuf::Eol::None => None,
             };
             if let Some(k) = eol {
-                items.push((t.tr(k).to_owned(), c.dim));
-            }
-            if ed.bom() {
-                items.push((t.tr("status.bom").to_owned(), c.dim));
+                right.push((t.tr(k).to_owned(), c.dim));
             }
         }
         if let Some(n) = &self.note {
-            items.push((n.clone(), c.dim));
+            left.push((n.clone(), c.dim));
         }
-        ito_statusbar::show(
-            ui,
-            &spec,
-            |ui| {
-                for (s, color) in &items {
-                    ito_statusbar::item(ui, s, *color);
-                }
-            },
-            |_| {},
-        );
+        (left, right)
     }
 
     /// The window's own bar: the logo and the name, the palette box, the bell
@@ -1310,6 +1361,58 @@ mod tests {
         app.tree = Some(structure::read(ed.version(), ed.text()));
         app.editor = Some(ed);
         assert_eq!(app.section().as_deref(), Some("Two"));
+    }
+
+    /// 8.9: The status bar counts the characters of the newest reading (line
+    /// breaks left out, `👍🏽` and `é` one each) and, while something is
+    /// selected, the selected ones; it says the encoding, the line ends and
+    /// the input method composing; a `--keys` state says the counts too.
+    #[test]
+    fn the_status_bar_counts_the_characters_and_says_how_the_file_is_written() {
+        let words = |items: &StatusItems| items.iter().map(|(s, _)| s.clone()).collect::<Vec<_>>();
+        let text = "# 見出し\r\n\r\n👍🏽 e\u{301}\r\n";
+        let mut app = App::for_tests();
+        app.editor = Some(engine::Editor::new(text));
+        let (left, right) = app.status_items(false);
+        assert_eq!(words(&left), ["Ln 1, Col 1"], "no reading yet, so no count");
+        assert_eq!(words(&right), ["UTF-8", "CRLF"]);
+
+        let ed = app.editor.as_ref().unwrap();
+        app.tree = Some(structure::read(ed.version(), ed.text()));
+        let (left, right) = app.status_items(true);
+        assert_eq!(words(&left), ["Ln 1, Col 1", "Chars 8", "見出し"]);
+        assert_eq!(words(&right), ["Composing", "UTF-8", "CRLF"]);
+
+        let ed = app.editor.as_mut().unwrap();
+        ed.set_caret(text.find('e').unwrap(), true);
+        let (left, _) = app.status_items(false);
+        assert!(words(&left).contains(&"Selected 7".to_owned()), "{left:?}");
+        let ed = app.editor.as_mut().unwrap();
+        ed.set_caret(0, false);
+        ed.set_caret(text.len(), true);
+        let (left, _) = app.status_items(false);
+        assert!(words(&left).contains(&"Selected 8".to_owned()), "{left:?}");
+        assert!(app.report().contains("chars: 8\nselected_chars: 8\n"), "{}", app.report());
+
+        // A typed key: the bar keeps the old reading's count until a new one comes.
+        let ed = app.editor.as_mut().unwrap();
+        ed.set_caret(0, false);
+        ed.insert("ab", 0);
+        let (left, _) = app.status_items(false);
+        assert!(words(&left).contains(&"Chars 8".to_owned()), "{left:?}");
+        assert!(app.report().contains("chars: 10\nselected_chars: 0\n"), "{}", app.report());
+
+        // A file that is not UTF-8 says so, read-only.
+        let dir = std::env::temp_dir().join(format!("weft-status-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("sjis.md");
+        std::fs::write(&file, b"\x82\xa0\n").unwrap();
+        let mut app = App::for_tests();
+        app.open(&file);
+        let (left, right) = app.status_items(false);
+        assert!(words(&left).contains(&"Read-only".to_owned()), "{left:?}");
+        assert_eq!(words(&right), ["Not UTF-8", "LF"]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 8.6: Quitting with changes not saved asks first; Esc stays, N goes
