@@ -53,6 +53,24 @@ fn command(text: &str, warnings: &mut Vec<String>) -> Option<Cmd> {
     }
 }
 
+/// What one key did to the keymap: see [`Keys::press`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Pressed {
+    /// It completed a binding: run these.
+    Run(Vec<Cmd>),
+    /// It began (or went on with) a chord.
+    Wait,
+    /// No binding has it: the keymap does not take it.
+    Nothing,
+}
+
+impl Pressed {
+    /// The keymap takes the key (so the character it would type is not typed).
+    pub fn took(&self) -> bool {
+        !matches!(self, Pressed::Nothing)
+    }
+}
+
 type Layers = Vec<(String, Vec<Binding<Cmd>>)>;
 
 /// The bindings in force, by layer: `app`, then `edit`.
@@ -120,6 +138,26 @@ impl Keys {
             }
         }
         ito_keymap::resolve(self.layer(commands::Layer::App), pressed)
+    }
+
+    /// One key `k` of a chord, after the keys in `pending`: what it
+    /// completes, a wait for more, or nothing (what led nowhere is dropped and
+    /// the key is tried alone). `pending` is left as the next key finds it.
+    /// A key bound to `none` alone is nothing: it types as an unbound key.
+    pub fn press(&self, pending: &mut Vec<Key>, k: Key, editing: bool) -> Pressed {
+        pending.push(k);
+        let pressed = match self.resolve(pending, editing) {
+            Match::Exact(b) if b.run.iter().all(|c| *c == Cmd::None) => Pressed::Nothing,
+            Match::Exact(b) => Pressed::Run(b.run.clone()),
+            Match::Pending(_) => return Pressed::Wait,
+            Match::None if pending.len() > 1 => {
+                pending.clear();
+                return self.press(pending, k, editing);
+            }
+            Match::None => Pressed::Nothing,
+        };
+        pending.clear();
+        pressed
     }
 
     /// The keys that run `name`, as the palette shows them; empty when it is

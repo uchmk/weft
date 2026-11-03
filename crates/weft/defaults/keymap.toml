@@ -228,6 +228,7 @@ desc = "Toggle the task"
 # A shifted symbol is written as the symbol it types: `<C-{>` is Ctrl+Shift+[.
 # On a JIS keyboard Ctrl+Shift+@ arrives as `<C-`>` and Ctrl+@ as `<C-[>`.
 # Pressing a heading's key on a heading of that level makes it a paragraph.
+# An Alt key never types its character: `<A-5>` is Alt+5, Shift held or not.
 
 [[edit.keymap]]
 on = "<C-b>"
@@ -243,6 +244,11 @@ desc = "Toggle italic"
 on = "<C-`>"
 run = "inline.code"
 desc = "Toggle inline code"
+
+[[edit.keymap]]
+on = "<A-5>"
+run = "inline.strike"
+desc = "Toggle strikethrough"
 
 [[edit.keymap]]
 on = "<C-k>"
@@ -285,6 +291,11 @@ run = "block.fence"
 desc = "Toggle the code block"
 
 [[edit.keymap]]
+on = "<A-q>"
+run = "block.quote"
+desc = "Toggle the quote"
+
+[[edit.keymap]]
 on = "<C-}>"
 run = "list.bullet"
 desc = "Toggle the bulleted list"
@@ -293,3 +304,18 @@ desc = "Toggle the bulleted list"
 on = "<C-{>"
 run = "list.number"
 desc = "Toggle the numbered list"
+
+[[edit.keymap]]
+on = "<A-t>"
+run = "list.task"
+desc = "Toggle the task list"
+
+[[edit.keymap]]
+on = "<A-x>"
+run = "list.check_tasks"
+desc = "Check the selected tasks"
+
+[[edit.keymap]]
+on = "<A-S-x>"
+run = "list.uncheck_tasks"
+desc = "Uncheck the selected tasks"

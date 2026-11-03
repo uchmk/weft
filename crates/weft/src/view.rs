@@ -14,7 +14,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use egui::text::{CCursor, LayoutJob, TextFormat};
-use egui::{pos2, vec2, Align2, Color32, Event, FontId, Galley, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{pos2, vec2, Align2, Color32, FontId, Galley, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use ito_textbuf::pos;
 use ito_theme::mix;
 
@@ -125,7 +125,8 @@ impl View {
     }
 
     /// Draw `ed` in what is left of `ui`. With `keys` the document has the
-    /// keys: typing, the input method, copy and paste and the mouse go to it.
+    /// keys: the input method and the mouse go to it (typing, copy and paste
+    /// come in with the keys, in their order, before this).
     pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, keys: bool, now_ms: u64) {
         let rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(rect, Sense::click_and_drag());
@@ -151,28 +152,6 @@ impl View {
             if f.composing {
                 preedit = f.preedit;
                 changed = true;
-            }
-            let events = ui.input(|i| i.events.clone());
-            for e in events {
-                match e {
-                    Event::Text(t) => {
-                        let t: String = t.chars().filter(|ch| !ch.is_control()).collect();
-                        changed |= ed.insert(&t, now_ms);
-                    }
-                    Event::Paste(t) => changed |= ed.paste(&t, now_ms),
-                    Event::Copy => {
-                        if let Some(s) = ed.selected_text() {
-                            ui.ctx().copy_text(s);
-                        }
-                    }
-                    Event::Cut => {
-                        if let Some(s) = ed.cut(now_ms) {
-                            ui.ctx().copy_text(s);
-                            changed = true;
-                        }
-                    }
-                    _ => {}
-                }
             }
             self.follow |= changed;
         }

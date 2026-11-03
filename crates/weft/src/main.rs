@@ -31,7 +31,6 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
 
 use ito_common::window::{Saved, Tracker};
-use ito_keymap::Match;
 use ito_keys::Key;
 use ito_keyscript::{Do, Runner, Step};
 
@@ -527,24 +526,58 @@ impl App {
         self.started.elapsed().as_millis() as u64
     }
 
-    /// The keys of the frame that the keymap may run: after the fixed ones
-    /// (F12, the palette, the scale) took theirs, and not while the palette
-    /// is open. A bare character goes to the widget that has the focus, or
-    /// to the document while it has the keys.
+    /// The frame's keys and typing, in the order they came (after the fixed
+    /// keys, F12, the palette and the scale, took theirs), and nothing while
+    /// the palette or the question before quitting is up.
+    ///
+    /// [`ito_keys::read`] gives the keys and the text in one list: a key goes
+    /// to the keymap, text to the document while it has the keys. Windows
+    /// sends a chord and the character it would type (Alt+X and `x`): the
+    /// character is dropped when the keymap takes the key, and after any Alt
+    /// chord. Copy, cut and paste go to the document, never to the keymap.
+    /// Text with no document to take it is a bare key for the keymap, unless
+    /// a widget (a field of the settings) has the focus and reads it.
     fn read_keys(&mut self, ctx: &egui::Context) {
         if self.palette.is_some() || self.quit.is_some() {
             return;
         }
-        let typing = ctx.memory(|m| m.focused().is_some()) || self.editing();
-        let events = ctx.input(|i| i.events.clone());
-        for e in events {
-            let k = match e {
-                egui::Event::Key { key, pressed: true, modifiers, .. } => ito_keys::from_egui(key, &modifiers),
-                egui::Event::Text(t) if !typing => t.chars().next().map(Key::char),
+        let focused = ctx.memory(|m| m.focused().is_some());
+        let (events, now) = ctx.input(|i| (i.events.clone(), i.modifiers));
+        // The events `read` makes a key of, in its order: `Some` for copy,
+        // cut and paste (which the keymap never sees).
+        let clips: Vec<Option<usize>> = events
+            .iter()
+            .enumerate()
+            .filter_map(|(i, e)| match e {
+                egui::Event::Key { key, pressed: true, modifiers, .. } => ito_keys::from_egui(*key, modifiers).map(|_| None),
+                egui::Event::Cut | egui::Event::Copy | egui::Event::Paste(_) => ito_keys::from_clipboard(&events, i, &now).map(|_| Some(i)),
                 _ => None,
-            };
-            if let Some(k) = k {
-                self.press(ctx, k);
+            })
+            .collect();
+        // Whether the keymap takes each key: pressed in turn on a copy of the
+        // chord so far, as `press` will press them.
+        let editing = self.editing();
+        let mut pending = self.key_pending.clone();
+        let mut nth = 0;
+        let inputs = ito_keys::read(&events, &now, |k| {
+            let clip = matches!(clips.get(nth), Some(Some(_)));
+            nth += 1;
+            !clip && self.keys.press(&mut pending, *k, editing).took()
+        });
+        let mut clips = clips.into_iter();
+        for input in inputs {
+            match input {
+                ito_keys::Input::Key(k) => match clips.next().flatten() {
+                    Some(i) => self.clipboard(ctx, &events[i]),
+                    None => self.press(ctx, k),
+                },
+                ito_keys::Input::Text(t) if self.editing() => self.type_text(&t),
+                ito_keys::Input::Text(t) if !focused => {
+                    if let Some(c) = t.chars().next() {
+                        self.press(ctx, Key::char(c));
+                    }
+                }
+                ito_keys::Input::Text(_) => {}
             }
         }
     }
@@ -552,23 +585,51 @@ impl App {
     /// One key of a chord: run what it completes, wait for more, or drop
     /// what led nowhere (and try the key alone).
     fn press(&mut self, ctx: &egui::Context, k: Key) {
-        self.key_pending.push(k);
-        let run = match self.keys.resolve(&self.key_pending, self.editing()) {
-            Match::Exact(b) => b.run.clone(),
-            Match::Pending(_) => return,
-            Match::None => {
-                let chord = self.key_pending.len() > 1;
-                self.key_pending.clear();
-                if chord {
-                    self.press(ctx, k);
-                }
-                return;
+        let editing = self.editing();
+        if let keymap::Pressed::Run(run) = self.keys.press(&mut self.key_pending, k, editing) {
+            for c in run {
+                self.run_key(ctx, c);
             }
-        };
-        self.key_pending.clear();
-        for c in run {
-            self.run_key(ctx, c);
         }
+    }
+
+    /// Typed text into the document (the input method's goes in through the
+    /// view). Control characters are not typed: Enter and Tab are keys.
+    fn type_text(&mut self, t: &str) {
+        let now = self.now_ms();
+        let Some(ed) = &mut self.editor else { return };
+        let t: String = t.chars().filter(|c| !c.is_control()).collect();
+        if ed.insert(&t, now) {
+            self.view.follow = true;
+        }
+    }
+
+    /// Copy, cut or paste (`e`), while the document has the keys. A widget
+    /// with the focus reads its own.
+    fn clipboard(&mut self, ctx: &egui::Context, e: &egui::Event) {
+        if !self.editing() {
+            return;
+        }
+        let now = self.now_ms();
+        let Some(ed) = &mut self.editor else { return };
+        let changed = match e {
+            egui::Event::Copy => {
+                if let Some(s) = ed.selected_text() {
+                    ctx.copy_text(s);
+                }
+                false
+            }
+            egui::Event::Cut => match ed.cut(now) {
+                Some(s) => {
+                    ctx.copy_text(s);
+                    true
+                }
+                None => false,
+            },
+            egui::Event::Paste(t) => ed.paste(t, now),
+            _ => false,
+        };
+        self.view.follow |= changed;
     }
 
     /// What a bound key (or the palette) runs. The document's commands run
@@ -991,7 +1052,8 @@ impl App {
     /// What the status bar says, left and right, each in reading order. On
     /// the left the caret's line and column, the characters selected and in
     /// the document, the section the caret is in, what is not saved yet and
-    /// the last thing done (a save, the scale); on the right, by the clock,
+    /// the last thing done (a save, the scale); the counts are grouped by
+    /// thousands (`12,345`). On the right, by the clock,
     /// the input method composing (`composing`), whether it is on and its
     /// input mode (nothing where that cannot be told) and how the file is
     /// written (its encoding, a BOM, its line ends). The document's count is the
@@ -1013,13 +1075,13 @@ impl App {
             if counted && !sel.is_empty() {
                 let reading = self.tree.as_ref().filter(|tree| tree.version == ed.version()).map(|tree| &tree.counts);
                 let n = match self.selected.count(ed.version(), ed.text(), sel.range(), reading) {
-                    Some(n) => n.to_string(),
+                    Some(n) => ito_common::text::grouped(n as u64),
                     None => t.tr("status.pending").to_owned(),
                 };
                 left.push((t.trf("status.selected", &[&n]), c.fg));
             }
             if let Some(tree) = self.tree.as_ref().filter(|_| counted) {
-                left.push((t.trf("status.chars", &[&tree.chars.to_string()]), c.dim));
+                left.push((t.trf("status.chars", &[&ito_common::text::grouped(tree.chars as u64)]), c.dim));
             }
             if let Some(s) = self.section() {
                 left.push((s, c.dim));
@@ -1246,6 +1308,44 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.frame(ui);
+    }
+
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        ito_theme::colors().bg.to_normalized_gamma_f32()
+    }
+
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if let Some(script) = &mut self.script {
+            if let Some(d) = script.input(ctx, raw) {
+                self.todo.push(d);
+            }
+        }
+    }
+
+    /// The window's last place, and, when the window closed from outside
+    /// while a script ran, the done file that says so (else the lane waits
+    /// out its timeout).
+    fn on_exit(&mut self) {
+        // Written now rather than on the tracker's clock.
+        if let Some(t) = &mut self.tracker {
+            t.close(None);
+        }
+        let Some(script) = &mut self.script else { return };
+        if !script.running() {
+            return;
+        }
+        let left = script.left();
+        script.finish();
+        let Some(done) = script.done.clone() else { return };
+        self.write_state(done, &ito_keyscript::closed_report(left));
+    }
+}
+
+impl App {
+    /// One frame of the window, all of it (the tests run it with the events
+    /// of a real keyboard).
+    fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.sync_common(&ctx);
         self.clicked();
@@ -1341,36 +1441,6 @@ impl eframe::App for App {
         if !cfg!(target_os = "macos") {
             ito_titlebar::resize_edges(&ctx);
         }
-    }
-
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        ito_theme::colors().bg.to_normalized_gamma_f32()
-    }
-
-    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
-        if let Some(script) = &mut self.script {
-            if let Some(d) = script.input(ctx, raw) {
-                self.todo.push(d);
-            }
-        }
-    }
-
-    /// The window's last place, and, when the window closed from outside
-    /// while a script ran, the done file that says so (else the lane waits
-    /// out its timeout).
-    fn on_exit(&mut self) {
-        // Written now rather than on the tracker's clock.
-        if let Some(t) = &mut self.tracker {
-            t.close(None);
-        }
-        let Some(script) = &mut self.script else { return };
-        if !script.running() {
-            return;
-        }
-        let left = script.left();
-        script.finish();
-        let Some(done) = script.done.clone() else { return };
-        self.write_state(done, &ito_keyscript::closed_report(left));
     }
 }
 
@@ -1787,7 +1857,7 @@ mod tests {
         app.tree = Some(reading(&app));
         let ((left, _), walk) = count::walked(|| app.status_items(false));
         let all = count::count(&text, 0..text.len());
-        assert!(words(&left).contains(&format!("Selected {all}")), "the reading came: {left:?}");
+        assert!(words(&left).contains(&format!("Selected {}", ito_common::text::grouped(all as u64))), "the reading came: {left:?}");
         assert!(walk <= near, "walked {walk} bytes");
 
         let ed = app.editor.as_mut().unwrap();
@@ -1795,7 +1865,7 @@ mod tests {
         ed.move_caret(engine::Motion::DocEnd, true);
         let ((left, _), walk) = count::walked(|| app.status_items(false));
         let n = count::count(&text, line.len() + 2..text.len());
-        assert!(words(&left).contains(&format!("Selected {n}")), "Ctrl+Shift+End: {left:?}");
+        assert!(words(&left).contains(&format!("Selected {}", ito_common::text::grouped(n as u64))), "Ctrl+Shift+End: {left:?}");
         assert!(walk <= near, "walked {walk} bytes");
 
         // Typed over, then undone: the selection is back, the reading behind.
@@ -1809,7 +1879,7 @@ mod tests {
         assert_eq!(walk, 0);
         app.tree = Some(reading(&app));
         let (left, _) = app.status_items(false);
-        assert!(words(&left).contains(&format!("Selected {n}")), "{left:?}");
+        assert!(words(&left).contains(&format!("Selected {}", ito_common::text::grouped(n as u64))), "{left:?}");
     }
 
     /// 8.6: Quitting with changes not saved asks first; Esc stays, N goes
@@ -2012,5 +2082,268 @@ mod tests {
         assert_eq!(app.editor.as_ref().unwrap().text(), "「強調」です");
         assert_eq!(app.note, None);
         assert_eq!(app.said.len(), 1);
+    }
+
+    // ---- The keys as a Windows keyboard sends them, through whole frames.
+
+    use egui::{Event, Key as K, Modifiers as M};
+
+    /// Ctrl as egui-winit reports it on Windows: `ctrl` and `command` both.
+    const CTRL: M = M { ctrl: true, command: true, ..M::NONE };
+
+    /// A key pressed or let go, as egui-winit sends it (the physical key is
+    /// not read).
+    fn key(k: K, modifiers: M, pressed: bool) -> Event {
+        Event::Key { key: k, physical_key: Some(k), pressed, repeat: false, modifiers }
+    }
+
+    /// One stroke as egui-winit sends it on Windows: Ctrl, Alt or Shift
+    /// going down, the press, the character it types (an Alt chord's too; a
+    /// Ctrl chord's is dropped there, so none), the release, then the
+    /// modifiers let go.
+    fn stroke(k: K, mods: M, text: Option<&str>) -> Vec<Event> {
+        let mut v = Vec::new();
+        if mods != M::NONE {
+            v.push(Event::ModifiersChanged(mods));
+        }
+        v.push(key(k, mods, true));
+        v.extend(text.map(|t| Event::Text(t.to_owned())));
+        v.push(key(k, mods, false));
+        if mods != M::NONE {
+            v.push(Event::ModifiersChanged(M::NONE));
+        }
+        v
+    }
+
+    /// A clipboard key as egui-winit sends it on Windows: the modifier
+    /// going down, the clipboard's event in place of the key's press, the
+    /// key's release, the modifier let go.
+    fn clip(event: Event, k: K, mods: M) -> Vec<Event> {
+        vec![Event::ModifiersChanged(mods), event, key(k, mods, false), Event::ModifiersChanged(M::NONE)]
+    }
+
+    /// An app with `text` open and `from..to` selected (the caret at `to`),
+    /// and the context its frames run in.
+    fn typing_into(text: &str, from: usize, to: usize) -> (App, egui::Context) {
+        let mut app = App::for_tests();
+        let mut ed = engine::Editor::new(text);
+        ed.set_caret(from, false);
+        ed.set_caret(to, true);
+        app.editor = Some(ed);
+        (app, egui::Context::default())
+    }
+
+    /// One whole frame of the app with `events`.
+    fn frame_with(app: &mut App, ctx: &egui::Context, events: Vec<Event>) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(raw, |ui| app.frame(ui));
+        // No painter takes the font's textures here.
+        out.textures_delta.clear();
+        out
+    }
+
+    fn text_of(app: &App) -> &str {
+        app.editor.as_ref().unwrap().text()
+    }
+
+    /// What `name` makes of `text` with `from..to` selected, run by name as
+    /// the palette runs it.
+    fn by_name(text: &str, from: usize, to: usize, name: &str) -> String {
+        let mut ed = engine::Editor::new(text);
+        ed.set_caret(from, false);
+        ed.set_caret(to, true);
+        assert_eq!(commands::edit(&mut ed, name, 0, 20), Some(true), "{name} changes {text:?}");
+        ed.text().to_owned()
+    }
+
+    /// What the clipboard was given in a frame.
+    fn copied(out: &egui::FullOutput) -> Vec<String> {
+        out.platform_output
+            .commands
+            .iter()
+            .filter_map(|c| match c {
+                egui::OutputCommand::CopyText(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 10.12: Each format key, as egui sends it from a JIS and a US
+    /// keyboard (Ctrl with no character), runs its command through a whole
+    /// frame while the document has the keys, as the palette runs it by
+    /// name, and types nothing.
+    #[test]
+    fn the_format_keys_run_their_commands_from_a_jis_and_a_us_keyboard() {
+        let ctrl_shift = CTRL | M::SHIFT;
+        let (word, lines) = ("word", "a\nb");
+        // (the key egui reports, what is held, the command, the text it works on, all selected)
+        let keys = [
+            (K::B, CTRL, "inline.bold", word),
+            (K::I, CTRL, "inline.italic", word),
+            // JIS Ctrl+Shift+@, then US Ctrl+`.
+            (K::Backtick, ctrl_shift, "inline.code", word),
+            (K::Backtick, CTRL, "inline.code", word),
+            (K::K, CTRL, "inline.link", word),
+            (K::Num1, CTRL, "heading.set_1", word),
+            (K::Num2, CTRL, "heading.set_2", word),
+            (K::Num3, CTRL, "heading.set_3", word),
+            (K::Num4, CTRL, "heading.set_4", word),
+            (K::Num5, CTRL, "heading.set_5", word),
+            (K::Num6, CTRL, "heading.set_6", word),
+            // JIS Ctrl+@ and Ctrl+[, and US Ctrl+[, are all this.
+            (K::OpenBracket, CTRL, "block.fence", lines),
+            // Ctrl+Shift+] and Ctrl+Shift+[ (JIS and US): the shift is in the symbol.
+            (K::CloseCurlyBracket, ctrl_shift, "list.bullet", lines),
+            (K::CloseCurlyBracket, CTRL, "list.bullet", lines),
+            (K::OpenCurlyBracket, ctrl_shift, "list.number", lines),
+            (K::OpenCurlyBracket, CTRL, "list.number", lines),
+        ];
+        for (k, mods, name, text) in keys {
+            let (mut app, ctx) = typing_into(text, 0, text.len());
+            frame_with(&mut app, &ctx, stroke(k, mods, None));
+            assert_eq!(text_of(&app), by_name(text, 0, text.len(), name), "{k:?} with {mods:?} runs {name}");
+            // The chord let go in the next frame: the same, once.
+            let (mut app, ctx) = typing_into(text, 0, text.len());
+            frame_with(&mut app, &ctx, vec![Event::ModifiersChanged(mods), key(k, mods, true)]);
+            frame_with(&mut app, &ctx, vec![key(k, mods, false), Event::ModifiersChanged(M::NONE)]);
+            assert_eq!(text_of(&app), by_name(text, 0, text.len(), name), "{k:?} with {mods:?} over two frames");
+        }
+    }
+
+    /// 10.14: Alt+Q, Alt+T, Alt+Shift+5 (or Alt+5), Alt+X and Alt+Shift+X,
+    /// as Windows sends them (the key, then its character), run the quote,
+    /// the task list, strikethrough, Check and Uncheck the selected tasks as
+    /// the palette runs them by name, and type nothing; the palette and the
+    /// key help show them, and none is one of weft's own keys or bound twice.
+    #[test]
+    fn the_alt_format_keys_run_their_commands_and_type_nothing() {
+        let (alt, alt_shift) = (M::ALT, M::ALT | M::SHIFT);
+        // (the text, all selected; the key egui reports, what is held, the
+        // character Windows sends; the command; its key in words)
+        let cases = [
+            ("a\nb", K::Q, alt, "q", "block.quote", "Alt+Q"),
+            ("a\nb", K::T, alt, "t", "list.task", "Alt+T"),
+            ("word", K::Num5, alt_shift, "%", "inline.strike", "Alt+5"),
+            ("word", K::Num5, alt, "5", "inline.strike", "Alt+5"),
+            ("- [ ] a\n- [x] b", K::X, alt, "x", "list.check_tasks", "Alt+X"),
+            ("- [x] a\n- [ ] b", K::X, alt_shift, "X", "list.uncheck_tasks", "Alt+Shift+X"),
+        ];
+        for (text, k, mods, typed, name, words) in cases {
+            let (mut app, ctx) = typing_into(text, 0, text.len());
+            frame_with(&mut app, &ctx, stroke(k, mods, Some(typed)));
+            let want = by_name(text, 0, text.len(), name);
+            assert_eq!(text_of(&app), want, "{k:?} with {mods:?} on {text:?} runs {name} and types no {typed:?}");
+
+            assert_eq!(app.keys.label(name), words, "the palette shows {name}'s key");
+            let desc = app.table.tr_desc(commands::find(name).unwrap().desc).to_owned();
+            assert!(app.commands().iter().any(|e| e.key == words && e.title == desc), "the palette lists {words}");
+            let listed = help::groups(&app).into_iter().flat_map(|g| g.rows).any(|(k, d)| d == desc && k.split(" / ").any(|k| k == words));
+            assert!(listed, "the key help lists {words} as {desc}");
+            let pressed = ito_keys::from_egui(k, &mods).unwrap();
+            assert!(keymap::Keys::fixed(&[pressed]).is_none(), "{words} is one of weft's own keys");
+            let bound = keymap::Keys::built_in_layers().iter().flat_map(|(_, b)| b).filter(|b| b.on == [pressed]).count();
+            assert_eq!(bound, 1, "{words} is bound {bound} times");
+        }
+        // An Alt chord that runs nothing types nothing either.
+        let (mut app, ctx) = typing_into("word", 4, 4);
+        frame_with(&mut app, &ctx, stroke(K::Z, alt, Some("z")));
+        assert_eq!(text_of(&app), "word");
+    }
+
+    /// 8.16: Keys and typing in one frame go in the order they came, and a
+    /// key the keymap runs types nothing: `a`, Left, `b`, Alt+T, `c` make
+    /// `- [ ] bca`; the undos take off `c`, the task, then the typing.
+    #[test]
+    fn keys_and_typing_in_one_frame_go_in_their_order() {
+        let (mut app, ctx) = typing_into("", 0, 0);
+        let mut events = stroke(K::A, M::NONE, Some("a"));
+        events.extend(stroke(K::ArrowLeft, M::NONE, None));
+        events.extend(stroke(K::B, M::NONE, Some("b")));
+        events.extend(stroke(K::T, M::ALT, Some("t")));
+        events.extend(stroke(K::C, M::NONE, Some("c")));
+        frame_with(&mut app, &ctx, events);
+        assert_eq!(text_of(&app), "- [ ] bca");
+        let ed = app.editor.as_mut().unwrap();
+        assert!(ed.undo());
+        assert_eq!(ed.text(), "- [ ] ba");
+        assert!(ed.undo());
+        assert_eq!(ed.text(), "ba");
+        while ed.undo() {}
+        assert_eq!(ed.text(), "");
+    }
+
+    /// 8.16: Plain keys, Shift and Space type their character once; Enter is
+    /// a key and breaks the line.
+    #[test]
+    fn plain_keys_type_their_character_once() {
+        let (mut app, ctx) = typing_into("", 0, 0);
+        let mut events = stroke(K::A, M::NONE, Some("a"));
+        events.extend(stroke(K::A, M::SHIFT, Some("A")));
+        events.extend(stroke(K::Space, M::NONE, Some(" ")));
+        events.extend(stroke(K::Enter, M::NONE, None));
+        events.extend(stroke(K::Num1, M::NONE, Some("1")));
+        events.extend(stroke(K::Num1, M::SHIFT, Some("!")));
+        frame_with(&mut app, &ctx, events);
+        assert_eq!(text_of(&app), "aA \n1!");
+    }
+
+    /// 8.17: Ctrl+V and Shift+Insert paste once, Ctrl+X and Shift+Delete cut
+    /// once, Ctrl+C and Ctrl+Insert copy (as Windows sends them: the
+    /// clipboard's event and the key's release, no press), whether the key
+    /// is let go in the frame or after it.
+    #[test]
+    fn the_clipboard_keys_paste_cut_and_copy_once() {
+        for (k, mods) in [(K::V, CTRL), (K::Insert, M::SHIFT)] {
+            let (mut app, ctx) = typing_into("ab", 1, 1);
+            frame_with(&mut app, &ctx, clip(Event::Paste("clip".to_owned()), k, mods));
+            assert_eq!(text_of(&app), "aclipb", "{k:?} with {mods:?}");
+            let (mut app, ctx) = typing_into("ab", 1, 1);
+            frame_with(&mut app, &ctx, vec![Event::ModifiersChanged(mods), Event::Paste("clip".to_owned())]);
+            frame_with(&mut app, &ctx, vec![key(k, mods, false), Event::ModifiersChanged(M::NONE)]);
+            assert_eq!(text_of(&app), "aclipb", "{k:?} with {mods:?} let go after the frame");
+        }
+        for (k, mods) in [(K::X, CTRL), (K::Delete, M::SHIFT)] {
+            let (mut app, ctx) = typing_into("a word", 2, 6);
+            let out = frame_with(&mut app, &ctx, clip(Event::Cut, k, mods));
+            assert_eq!(text_of(&app), "a ", "{k:?} with {mods:?}");
+            assert_eq!(copied(&out), ["word"]);
+        }
+        for (k, mods) in [(K::C, CTRL), (K::Insert, CTRL)] {
+            let (mut app, ctx) = typing_into("a word", 2, 6);
+            let out = frame_with(&mut app, &ctx, clip(Event::Copy, k, mods));
+            assert_eq!(text_of(&app), "a word", "{k:?} with {mods:?}");
+            assert_eq!(copied(&out), ["word"]);
+        }
+    }
+
+    /// 8.18: A read-only file (not UTF-8) takes no typing, no paste, no cut
+    /// and no format key; copy still copies.
+    #[test]
+    fn a_read_only_file_takes_no_typing_from_the_keys() {
+        let dir = std::env::temp_dir().join(format!("weft-keys-ro-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("sjis.md");
+        std::fs::write(&file, b"\x82\xa0 word\n").unwrap();
+        let mut app = App::for_tests();
+        app.open(&file);
+        let ctx = egui::Context::default();
+        let was = text_of(&app).to_owned();
+        let ed = app.editor.as_mut().unwrap();
+        ed.set_caret(0, false);
+        ed.set_caret(was.len(), true);
+        let mut events = stroke(K::A, M::NONE, Some("a"));
+        events.extend(stroke(K::Q, M::ALT, Some("q")));
+        events.extend(stroke(K::B, CTRL, None));
+        events.extend(clip(Event::Paste("clip".to_owned()), K::V, CTRL));
+        events.extend(clip(Event::Cut, K::X, CTRL));
+        frame_with(&mut app, &ctx, events);
+        assert_eq!(text_of(&app), was);
+        let out = frame_with(&mut app, &ctx, clip(Event::Copy, K::C, CTRL));
+        assert_eq!(copied(&out), [was]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
