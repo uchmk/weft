@@ -6,11 +6,10 @@
 //! Positions are bytes on `char` boundaries, as ito-textbuf keeps them; every
 //! conversion goes through `ito_textbuf::pos`.
 
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use std::ops::{Range, RangeInclusive};
-
-use ito_mdedit::{Change, Dir, SelChange, Step, Target};
+use ito_mdedit::{Change, SelChange, Unit};
 use ito_textbuf::{pos, Doc, Edit, Selection, Transaction};
 
 /// A caret move. `PageUp` / `PageDown` carry how many lines a page is.
@@ -371,23 +370,20 @@ impl Editor {
         }
     }
 
-    /// The lines a Tab or Shift+Tab works on when the selection crosses a
-    /// line break: every line it touches, less the last when it ends at that
-    /// line's start. `None` when the selection is within one line.
-    fn selected_lines(&self) -> Option<std::ops::RangeInclusive<usize>> {
-        let r = self.doc.selection().range();
-        let (first, last) = (self.line_of(r.start), self.line_of(r.end));
-        if first == last {
-            return None;
+    /// The same, as [`ito_mdedit::shift_lines`] takes it.
+    fn shift_unit(&self) -> Unit {
+        if self.tab_char {
+            Unit::Tab
+        } else {
+            Unit::Spaces(u8::try_from(self.tab).unwrap_or(u8::MAX))
         }
-        let ends_at_start = self.line_range(last).is_some_and(|l| l.start == r.end);
-        Some(first..=if ends_at_start { last - 1 } else { last })
     }
 
     /// Whether the selection crosses a line break, so that Tab and Shift+Tab
     /// work on its lines ([`Editor::shift_lines`]) and not at the caret.
     pub fn spans_lines(&self) -> bool {
-        self.selected_lines().is_some()
+        let r = self.doc.selection().range();
+        self.line_of(r.start) != self.line_of(r.end)
     }
 
     /// Tab outside a table and a list item, as one undo step: a tab
@@ -424,63 +420,22 @@ impl Editor {
     }
 
     /// Tab (`deeper`) or Shift+Tab over a selection that crosses a line
-    /// break, as one undo step. Each line it touches moves one level, but a
-    /// blank one: a list item as [`ito_mdedit::indent_item`] and
-    /// [`ito_mdedit::outdent_item`] move it, with its nested lines (so an
-    /// item under one selected goes with it, not twice); any other line by a
-    /// tab or the tab width of spaces at its start, a line of code too. The
-    /// rows of a table stay (spaces before a table at the left edge make it
-    /// code) unless they are in a selected item. The selection keeps its
-    /// lines, so the next press goes on. `false` when nothing moved.
+    /// break, as one undo step: [`ito_mdedit::shift_lines`] with the tab
+    /// width or a tab (the settings) for the lines that are not list items.
+    /// The selection keeps its lines and its direction, so the next press
+    /// goes on. `false` when nothing moved.
     pub fn shift_lines(&mut self, deeper: bool) -> bool {
         if !self.writable() {
             return false;
         }
-        let Some(lines) = self.selected_lines() else { return false };
         let before = self.doc.selection();
-        let old = self.text();
-        let new = shift_text(old, lines, deeper, &self.unit(), self.tab);
-        let (os, ns) = (line_starts(old), line_starts(&new));
-        // The structure commands keep the lines; if they did not, the
-        // selection could not be kept on its lines.
-        if new == old || os.len() != ns.len() {
-            return false;
-        }
-        let span = |t: &str, st: &[usize], i: usize| st[i]..st.get(i + 1).copied().unwrap_or(t.len());
-        // Line by line (with its break): the old range, the new, and the
-        // bytes the two share at the start and at the end.
-        let pairs: Vec<_> = (0..os.len())
-            .map(|i| {
-                let (o, n) = (span(old, &os, i), span(&new, &ns, i));
-                let same = common(&old[o.clone()], &new[n.clone()]);
-                (o, n, same)
-            })
-            .collect();
-        // From the last line up: each edit leaves the lines above where they were.
-        let edits: Vec<Edit> = pairs
-            .iter()
-            .rev()
-            .filter(|(o, n, (p, s))| o.len() > p + s || n.len() > p + s)
-            .map(|(o, n, (p, s))| Edit { range: o.start + p..o.end - s, text: new[n.start + p..n.end - s].to_owned() })
-            .collect();
-        // A position keeps its place in what did not change; one at a line's
-        // start stays there, so the selection takes in what went before the
-        // first line; one in what changed goes to the end of what took its place.
-        let map = |x: usize| {
-            let (o, n, (p, s)) = &pairs[os.partition_point(|&st| st <= x) - 1];
-            let c = x - o.start;
-            n.start
-                + if c <= *p {
-                    c
-                } else if c >= o.len() - s {
-                    n.len() - (o.len() - c)
-                } else {
-                    c.min(n.len() - s)
-                }
-        };
-        let after = Selection { anchor: map(before.anchor), head: map(before.head) };
+        let text = self.text();
+        // A backwards selection goes in as `start > end` and comes back so.
+        let sel = pos::floor(text, before.anchor)..pos::floor(text, before.head);
+        let Some(sc) = ito_mdedit::shift_lines(text, sel, deeper, self.shift_unit()) else { return false };
+        let after = Selection { anchor: sc.selection.start, head: sc.selection.end };
         self.goal = None;
-        self.doc.apply(Transaction::new(edits, before, after)).is_ok()
+        self.doc.apply(Transaction::new(vec![Edit::from(&sc.change)], before, after)).is_ok()
     }
 
     /// Run a format command of ito-mdedit over the selection (the caret as an
@@ -551,70 +506,6 @@ pub fn write(job: &SaveJob) -> Result<(), String> {
     ito_common::write_atomic(&job.path, job.bytes.as_bytes())
 }
 
-// ---------------------------------------------------------------- Tab over lines
-
-/// `text` after Tab (`deeper`) or Shift+Tab on `lines`, as
-/// [`Editor::shift_lines`] says. A line that is not a list item gets `unit`
-/// at its start, or loses a tab or up to `tab` spaces.
-fn shift_text(text: &str, lines: RangeInclusive<usize>, deeper: bool, unit: &str, tab: usize) -> String {
-    let mut cur = text.to_owned();
-    // The other lines move last, so the items and tables are found in a
-    // text where only the items above have moved (the lines of a fence put
-    // four spaces in would no longer be a fence).
-    let mut plain = Vec::new();
-    // Lines up to here went with an item, or are the rows of a table.
-    let mut taken_to: Option<usize> = None;
-    // Lines up to here look like a table but are not one (they are code).
-    let mut not_table_to: Option<usize> = None;
-    for l in lines {
-        if taken_to.is_some_and(|t| l <= t) {
-            continue;
-        }
-        let ls = line_ranges(&cur);
-        let Some(r) = ls.get(l).cloned() else { break };
-        let line = &cur[r.clone()];
-        if line.trim().is_empty() {
-            continue;
-        }
-        if starts_item(line) {
-            let moved = if deeper { ito_mdedit::indent_item(&cur, r.start) } else { ito_mdedit::outdent_item(&cur, r.start) };
-            // `None` for a line of code, and for an item at the left edge
-            // going out: that one stays, and so do its nested lines.
-            if moved.is_some() || (!deeper && ito_mdedit::indent_item(&cur, r.start).is_some()) {
-                taken_to = Some(extent(&cur, &ls, l));
-                if let Some(c) = moved {
-                    cur = c.apply(&cur);
-                }
-                continue;
-            }
-        } else if line.contains('|') && !not_table_to.is_some_and(|n| l <= n) {
-            if let Some(c) = ito_mdedit::next_cell(&cur, r.start, Step::Next) {
-                let (header, last) = (line_index(&ls, c.range.start), line_index(&ls, c.range.end));
-                let h = ls[header].clone();
-                // ito-mdedit's tables are lines with bars; a table is one only
-                // where the Markdown reads one (not in a code fence).
-                if ito_mdedit::next(&cur, h.end, Target::Table, Dir::Up).is_some_and(|s| s >= h.start) {
-                    taken_to = Some(last);
-                    continue;
-                }
-                not_table_to = Some(last);
-            }
-        }
-        plain.push(l);
-    }
-    let ls = line_ranges(&cur);
-    for &l in plain.iter().rev() {
-        let r = ls[l].clone();
-        if deeper {
-            cur.insert_str(r.start, unit);
-        } else {
-            let n = unindent_len(&cur[r.clone()], tab);
-            cur.replace_range(r.start..r.start + n, "");
-        }
-    }
-    cur
-}
-
 /// What Shift+Tab takes off the start of `line`: a tab, or up to `tab` spaces.
 fn unindent_len(line: &str, tab: usize) -> usize {
     if line.starts_with('\t') {
@@ -622,86 +513,6 @@ fn unindent_len(line: &str, tab: usize) -> usize {
     } else {
         line.bytes().take_while(|&b| b == b' ').take(tab).count()
     }
-}
-
-/// Whether `line` starts a list item as ito-mdedit reads one: blanks, then
-/// `-`, `*` or `+` and a space, or 1 to 9 digits, `.` or `)` and a space.
-fn starts_item(line: &str) -> bool {
-    let b = line.trim_start_matches([' ', '\t']).as_bytes();
-    if b.len() >= 2 && matches!(b[0], b'-' | b'*' | b'+') && b[1] == b' ' {
-        return true;
-    }
-    let d = b.iter().take_while(|c| c.is_ascii_digit()).count();
-    (1..=9).contains(&d) && b.len() > d + 1 && matches!(b[d], b'.' | b')') && b[d + 1] == b' '
-}
-
-/// The width of the blanks `line` starts with (a tab to the next multiple of 4).
-fn lead(line: &str) -> usize {
-    let mut w = 0;
-    for b in line.bytes() {
-        match b {
-            b' ' => w += 1,
-            b'\t' => w = (w / 4 + 1) * 4,
-            _ => break,
-        }
-    }
-    w
-}
-
-/// The last line of the item on line `k`: the lines after it that are more
-/// indented (blank lines among them), as ito-mdedit moves them with it.
-fn extent(text: &str, ls: &[Range<usize>], k: usize) -> usize {
-    let w = lead(&text[ls[k].clone()]);
-    let mut last = k;
-    for (j, r) in ls.iter().enumerate().skip(k + 1) {
-        let line = &text[r.clone()];
-        if line.trim().is_empty() {
-            continue;
-        }
-        if lead(line) <= w {
-            break;
-        }
-        last = j;
-    }
-    last
-}
-
-/// Every line of `text` (one after a last break too), without its break.
-fn line_ranges(text: &str) -> Vec<Range<usize>> {
-    let mut out = Vec::new();
-    let mut start = 0;
-    for (i, _) in text.match_indices('\n') {
-        let end = if i > start && text.as_bytes()[i - 1] == b'\r' { i - 1 } else { i };
-        out.push(start..end);
-        start = i + 1;
-    }
-    out.push(start..text.len());
-    out
-}
-
-/// The line of `ls` holding `byte`.
-fn line_index(ls: &[Range<usize>], byte: usize) -> usize {
-    ls.partition_point(|r| r.start <= byte).saturating_sub(1)
-}
-
-/// Where each line of `text` starts.
-fn line_starts(text: &str) -> Vec<usize> {
-    std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1)).collect()
-}
-
-/// The bytes `a` and `b` share at the start and then at the end of what is
-/// left, both on `char` boundaries.
-fn common(a: &str, b: &str) -> (usize, usize) {
-    let mut p = a.bytes().zip(b.bytes()).take_while(|(x, y)| x == y).count();
-    while !a.is_char_boundary(p) {
-        p -= 1;
-    }
-    let most = a.len().min(b.len()) - p;
-    let mut s = a.bytes().rev().zip(b.bytes().rev()).take(most).take_while(|(x, y)| x == y).count();
-    while !a.is_char_boundary(a.len() - s) {
-        s -= 1;
-    }
-    (p, s)
 }
 
 #[cfg(test)]
