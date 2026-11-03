@@ -144,6 +144,15 @@ utf8 = "UTF-8"
 not_utf8 = "Not UTF-8"
 # The input method is composing.
 composing = "Composing"
+# The input method: switched off, or on in one of its input modes (on in a
+# mode not listed: Chinese, Korean, an unknown one).
+ime_off = "IME off"
+ime_on = "IME on"
+ime_hiragana = "Hiragana"
+ime_full_katakana = "Full-width katakana"
+ime_half_katakana = "Half-width katakana"
+ime_full_alnum = "Full-width alphanumeric"
+ime_half_alnum = "Half-width alphanumeric"
 lf = "LF"
 crlf = "CRLF"
 mixed = "Mixed line endings"

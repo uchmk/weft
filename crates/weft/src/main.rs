@@ -164,8 +164,9 @@ struct App {
     bell_at: egui::Rect,
     /// The command palette while it is open (Ctrl+Shift+P, or the bar's box).
     palette: Option<ito_palette::View>,
-    /// The Japanese face, read off the UI thread; `None` once it is registered.
-    font: Option<std::sync::mpsc::Receiver<Option<Vec<u8>>>>,
+    /// Whether the input method is on and its input mode, as the status bar
+    /// last read it; `None` where the platform cannot tell.
+    ime: Option<ito_ime::Status>,
     /// The `--keys` script while it plays, and what its steps ask the frame to do.
     script: Option<Runner>,
     todo: Vec<Do>,
@@ -228,6 +229,19 @@ enum Command {
 /// What one side of the status bar says: each item's words and colour.
 type StatusItems = Vec<(String, egui::Color32)>;
 
+/// The lang key the status bar names an input mode of a switched-on input
+/// method with.
+fn ime_mode_key(mode: ito_ime::Mode) -> &'static str {
+    match mode {
+        ito_ime::Mode::Hiragana => "status.ime_hiragana",
+        ito_ime::Mode::FullKatakana => "status.ime_full_katakana",
+        ito_ime::Mode::HalfKatakana => "status.ime_half_katakana",
+        ito_ime::Mode::FullAlnum => "status.ime_full_alnum",
+        ito_ime::Mode::HalfAlnum => "status.ime_half_alnum",
+        ito_ime::Mode::Other => "status.ime_on",
+    }
+}
+
 impl App {
     fn new(cc: &eframe::CreationContext<'_>, saved: &Saved, script: Option<Runner>, file: Option<PathBuf>) -> Self {
         saved.put(cc);
@@ -254,6 +268,11 @@ impl App {
         // The scale is common.toml's, so egui's own Ctrl+= / Ctrl+- stay out of it.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         cc.egui_ctx.set_zoom_factor(prefs.common.scale_or_one());
+        // The monospace face common.toml names (`mono_font`), with the
+        // Japanese and emoji faces behind both families so names do not draw
+        // as boxes: read and set on a thread of their own (the Japanese face
+        // is tens of megabytes), so the window does not wait for them.
+        ito_fonts::load_in_background(cc.egui_ctx.clone(), prefs.common.mono_font_or_default());
         let wake = cc.egui_ctx.clone();
         let (files, done) = file_thread(cc.egui_ctx.clone());
         // A click on a system notification weft showed brings this window forward.
@@ -280,7 +299,7 @@ impl App {
             bell_open: false,
             bell_at: egui::Rect::NOTHING,
             palette: None,
-            font: Some(font_reader(&cc.egui_ctx)),
+            ime: None,
             script,
             todo: Vec::new(),
             keys: keymap::Keys::load(None).0,
@@ -353,7 +372,7 @@ impl App {
             bell_open: false,
             bell_at: egui::Rect::NOTHING,
             palette: None,
-            font: None,
+            ime: None,
             script: None,
             todo: Vec::new(),
             keys,
@@ -820,28 +839,6 @@ impl App {
         }
     }
 
-    /// Registers the faces once the reader thread has the Japanese one: the
-    /// monospace face common.toml names (`mono_font`), with the Japanese one
-    /// behind both families so names do not draw as boxes.
-    fn take_font(&mut self, ctx: &egui::Context) {
-        let Some(rx) = &self.font else { return };
-        let bytes = match rx.try_recv() {
-            Ok(b) => b,
-            Err(std::sync::mpsc::TryRecvError::Empty) => return,
-            Err(_) => None,
-        };
-        self.font = None;
-        let mut fonts = egui::FontDefinitions::default();
-        ito_fonts::register(&mut fonts, self.prefs.common.mono_font_or_default());
-        if let Some(bytes) = bytes {
-            fonts.font_data.insert("japanese".to_owned(), std::sync::Arc::new(egui::FontData::from_owned(bytes)));
-            for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-                fonts.families.entry(family).or_default().push("japanese".to_owned());
-            }
-        }
-        ctx.set_fonts(fonts);
-    }
-
     /// Ctrl+wheel and Ctrl+= / Ctrl+- / Ctrl+0: the whole window's scale, one
     /// step at a time. It is applied now and written to common.toml off the UI
     /// thread, so the other apps at the same desk follow within 2 seconds.
@@ -951,6 +948,7 @@ impl App {
     /// the right end.
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         let composing = self.editing() && self.view.composing(ui.ctx());
+        self.read_ime(ui.ctx());
         let (left, right) = self.status_items(composing);
         let clock = self.prefs.common.clock_or(None);
         let spec = ito_statusbar::Spec { clock: &clock, lang: &self.lang, opacity: 1.0 };
@@ -971,12 +969,19 @@ impl App {
         );
     }
 
+    /// The input method's state for the status bar, read each frame (see
+    /// [`App::ime`]).
+    fn read_ime(&mut self, ctx: &egui::Context) {
+        self.ime = self.view.ime_status(ctx);
+    }
+
     /// What the status bar says, left and right, each in reading order. On
     /// the left the caret's line and column, the characters selected and in
     /// the document, the section the caret is in, what is not saved yet and
     /// the last thing done (a save, the scale); on the right, by the clock,
-    /// the input method composing (`composing`) and how the file is written
-    /// (its encoding, a BOM, its line ends). The document's count is the
+    /// the input method composing (`composing`), whether it is on and its
+    /// input mode (nothing where that cannot be told) and how the file is
+    /// written (its encoding, a BOM, its line ends). The document's count is the
     /// newest reading's, so no key waits for it; the selection's is counted
     /// from the reading of this text, whatever its size, or, while the
     /// reading is behind, walked only when short and otherwise pending
@@ -1016,6 +1021,14 @@ impl App {
             }
             if composing {
                 right.push((t.tr("status.composing").to_owned(), c.fg));
+            }
+            if let Some(ime) = self.ime {
+                // Off is the quiet state; on, typing goes through the input method.
+                let (key, color) = match ime {
+                    ito_ime::Status { open: false, .. } => ("status.ime_off", c.dim),
+                    ito_ime::Status { mode, .. } => (ime_mode_key(mode), c.fg),
+                };
+                right.push((t.tr(key).to_owned(), color));
             }
             match ed.locked() {
                 Some(engine::Locked::NotUtf8) => right.push((t.tr("status.not_utf8").to_owned(), c.wait)),
@@ -1267,7 +1280,6 @@ impl eframe::App for App {
         if !taking {
             self.command_palette(&ctx);
         }
-        self.take_font(&ctx);
         if self.settings_open {
             settings::show(ui, self);
         } else {
@@ -1366,17 +1378,6 @@ fn keys_arg(args: &[String]) -> Result<Option<Vec<Step>>, String> {
         [_, _, more, ..] => Err(format!("unknown argument `{more}`")),
         [] => Ok(None),
     }
-}
-
-/// Reads the Japanese face on a thread of its own (it is tens of megabytes) and repaints when it is in.
-fn font_reader(ctx: &egui::Context) -> std::sync::mpsc::Receiver<Option<Vec<u8>>> {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let ctx = ctx.clone();
-    std::thread::spawn(move || {
-        let _ = tx.send(ito_common::fonts::read_first(ito_common::fonts::JAPANESE).map(|(_, b)| b));
-        ctx.request_repaint();
-    });
-    rx
 }
 
 /// Puts a line where whoever typed the command is looking, on standard error
@@ -1658,6 +1659,62 @@ mod tests {
         assert!(words(&left).contains(&"Read-only".to_owned()), "{left:?}");
         assert_eq!(words(&right), ["Not UTF-8", "LF"]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 8.14: by the clock, after "Composing" and before the encoding, the
+    /// status bar says whether the input method is on and, on, its input
+    /// mode, in the language's words; where that cannot be told, and with no
+    /// document, nothing.
+    #[test]
+    fn the_status_bar_says_whether_the_input_method_is_on_and_its_mode() {
+        use ito_ime::{Ime, Mode, Status};
+        let words = |items: &StatusItems| items.iter().map(|(s, _)| s.clone()).collect::<Vec<_>>();
+        let ctx = egui::Context::default();
+        let mut app = App::for_tests();
+        Ime::fake_status(&ctx, Some(Some(Status { open: true, mode: Mode::Hiragana })));
+        app.read_ime(&ctx);
+        assert!(app.status_items(false).1.is_empty(), "no document, no item");
+
+        app.editor = Some(engine::Editor::new("a\n"));
+        let on = |open, mode| Some(Status { open, mode });
+        for (status, want) in [
+            (on(false, Mode::HalfAlnum), "IME off"),
+            (on(true, Mode::Hiragana), "Hiragana"),
+            (on(true, Mode::FullKatakana), "Full-width katakana"),
+            (on(true, Mode::HalfKatakana), "Half-width katakana"),
+            (on(true, Mode::FullAlnum), "Full-width alphanumeric"),
+            (on(true, Mode::HalfAlnum), "Half-width alphanumeric"),
+            (on(true, Mode::Other), "IME on"),
+        ] {
+            Ime::fake_status(&ctx, Some(status));
+            app.read_ime(&ctx);
+            let (_, right) = app.status_items(true);
+            assert_eq!(words(&right), ["Composing", want, "UTF-8", "LF"], "{status:?}");
+            let c = ito_theme::colors();
+            let color = if status.is_some_and(|s| s.open) { c.fg } else { c.dim };
+            assert_eq!(right[1].1, color, "{status:?}: on in the text's colour, off quieter");
+        }
+
+        Ime::fake_status(&ctx, Some(None));
+        app.read_ime(&ctx);
+        assert_eq!(words(&app.status_items(false).1), ["UTF-8", "LF"], "cannot tell: nothing");
+
+        // In Japanese.
+        let (table, _) = i18n::table("ja");
+        app.table = table;
+        for (status, want) in [
+            (on(false, Mode::HalfAlnum), "IME オフ"),
+            (on(true, Mode::Hiragana), "ひらがな"),
+            (on(true, Mode::FullKatakana), "全角カナ"),
+            (on(true, Mode::HalfKatakana), "半角カナ"),
+            (on(true, Mode::FullAlnum), "全角英数"),
+            (on(true, Mode::HalfAlnum), "半角英数"),
+            (on(true, Mode::Other), "IME オン"),
+        ] {
+            Ime::fake_status(&ctx, Some(status));
+            app.read_ime(&ctx);
+            assert_eq!(words(&app.status_items(false).1)[0], want, "{status:?}");
+        }
     }
 
     /// 8.9: A file that is not UTF-8 shows no count, in the bar or in a

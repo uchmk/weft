@@ -1,6 +1,6 @@
 # Checklist
 
-58 checks in TESTING.md, 45 left for a person.
+61 checks in TESTING.md, 47 left for a person.
 
 ## 1. Start
 
@@ -51,6 +51,7 @@
 - [ ] **5.2** Break `common.toml` (an unclosed `[`) while weft is open → A notice under the bell says what could not be read; the window keeps its theme and language 〔未訳〕
 - [ ] **5.3** Press "Mark all read" → The bell's count goes away 〔未訳〕
 - [ ] **5.6** Make FILE.md read-only, run `weft FILE.md --keys "x<Wait:3000><C-s>"` and click another window within the 3 seconds; then click the "Could not save" system notification (or its Open button) → weft comes to the front with the document in front and the notice read. Done again with weft left in front, the failure only goes under the bell: no system notification, sound or webhook 〔未訳〕
+- [ ] **5.7** Make FILE.md read-only, run `weft FILE.md --keys "x<Wait:3000><C-s>"` and minimize weft within the 3 seconds; then click the "Could not save" system notification (or its Open button) → weft comes back from the taskbar at its size and place, in front, with the document in front and the notice read 〔未訳〕
 
 ## 6. Scale
 
@@ -69,7 +70,7 @@
 
 ## 8. Editing
 
-自動テスト済みなので下には出していない: 8.6, 8.9, 8.10
+自動テスト済みなので下には出していない: 8.6, 8.9, 8.10, 8.14
 
 - [ ] **8.1** Run `weft FILE.md` on a file with CRLF line ends and a BOM; move with `←` `→` over `é`, `漢字` and `👍🏽` → The caret steps over a whole character each time (the emoji with its skin tone is one); the status bar says the line and column and, by the clock, `UTF-8`, `BOM` and `CRLF` 〔未訳〕
 - [ ] **8.2** Type a word, press `Enter`, type another; press `Ctrl+Z` three times, then `Ctrl+Y`; press `Backspace` three times quickly, then `Ctrl+Z` → The status bar says "Unsaved"; each `Ctrl+Z` takes back one step (the second word, the line break, the first word), and "Unsaved" goes once the text is back as it was read; `Ctrl+Y` puts the first word back. The three `Backspace`s come back with one `Ctrl+Z` 〔未訳〕
@@ -78,8 +79,9 @@
 - [ ] **8.5** Open a Shift_JIS file → The bell says it is not UTF-8 and opened read-only; the status bar says "Read-only" and, by the clock, "Not UTF-8"; typing changes nothing and `Ctrl+S` writes nothing 〔未訳〕
 - [ ] **8.7** Open a file with headings, `**bold**`, `` `code` ``, a task list and a ` ```rust ` fence; type quickly in a long file → Headings, emphasis, code, the list markers and the Rust code have their colours; typing never waits for them (the old colours stay until the new reading comes) 〔未訳〕
 - [ ] **8.8** Type Japanese with the IME on, then press `Enter` to commit → The text being composed shows at the caret, the candidate window sits by the caret, and the status bar says "Composing" by the clock until it is committed; the `Enter` commits and does not break the line 〔未訳〕
-- [ ] **8.12** Open a `.md` of about 8 MB (a few lines copied over and over); type quickly; press `Ctrl+A`; press `Ctrl+Home`, then `Ctrl+Shift+End`; type over the selection, then press `Ctrl+Z` → No key hitches: each shows at once. The document's count stays the old one until the new reading comes; "Selected" shows the selection's count, or "Selected …" until the reading comes and then the count (after `Ctrl+Z` the selection is back, and its count with it) 〔未訳〕
+- [ ] **8.12** Open a `.md` of about 8 MB (a few lines copied over and over); type quickly; press `Ctrl+A`; press `Ctrl+Home`, then `Ctrl+Shift+End`; type over the selection, then press `Ctrl+Z` → No key hitches: each shows at once. The document's count stays the old one until the new reading comes, within about a second of the last key; "Selected" shows the selection's count, or "Selected …" until the reading comes and then the count (after `Ctrl+Z` the selection is back, and its count with it) 〔未訳〕
 - [ ] **8.13** Look at the full-width spaces and the hard-break marks of 8.10 in a light and a dark theme; type quickly in a long file that has them → The marks are seen but quieter than the text in both themes; typing never waits for them 〔未訳〕
+- [ ] **8.15** With Microsoft IME, press `半角/全角`, then change the input mode from its menu on the taskbar, with weft in front → The status bar follows each change at once, in the language's words; on is in the colour of the text, off is quieter 〔未訳〕
 
 ## 9. The external editor and key scripts
 

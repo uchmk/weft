@@ -118,6 +118,12 @@ impl View {
         self.ime.composing(ctx)
     }
 
+    /// Whether the input method is on and its input mode (for the status
+    /// bar); `None` where the platform cannot tell.
+    pub fn ime_status(&self, ctx: &egui::Context) -> Option<ito_ime::Status> {
+        self.ime.status(ctx)
+    }
+
     /// Draw `ed` in what is left of `ui`. With `keys` the document has the
     /// keys: typing, the input method, copy and paste and the mouse go to it.
     pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, keys: bool, now_ms: u64) {

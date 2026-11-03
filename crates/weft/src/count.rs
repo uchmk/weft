@@ -38,27 +38,21 @@ pub fn walked<T>(f: impl FnOnce() -> T) -> (T, usize) {
     (out, WALKED.with(|w| w.get()) - before)
 }
 
-/// A cluster that is a line break, not counted.
-fn is_break(cluster: &str) -> bool {
-    matches!(cluster, "\n" | "\r\n" | "\r")
-}
-
 /// How many characters `text[range]` has. The range is clamped into the
-/// text; an end inside a cluster counts that cluster.
+/// text; an end inside a cluster counts that cluster (ito's `count_chars`
+/// would count only the part inside, so the ends are moved out to the
+/// clusters first: a stretch from boundary to boundary is cut into the
+/// clusters the whole text has there).
 pub fn count(text: &str, range: Range<usize>) -> usize {
     let end = range.end.min(text.len());
-    let mut at = pos::floor(text, range.start.min(end));
-    #[cfg(test)]
-    WALKED.with(|w| w.set(w.get() + (end - at)));
-    let mut n = 0;
-    while at < end {
-        let Some(next) = pos::next_grapheme(text, at) else { break };
-        if !is_break(&text[at..next]) {
-            n += 1;
-        }
-        at = next;
+    let start = pos::floor(text, range.start.min(end));
+    if start >= end {
+        return 0;
     }
-    n
+    let (from, to) = (cluster_start(text, start), cluster_end(text, end));
+    #[cfg(test)]
+    WALKED.with(|w| w.set(w.get() + (to - from)));
+    pos::count_chars(text, from..to)
 }
 
 /// The start of the cluster `at` is in (`at` itself on a boundary).
@@ -67,6 +61,17 @@ fn cluster_start(text: &str, at: usize) -> usize {
     match pos::prev_grapheme(text, at) {
         Some(p) if pos::next_grapheme(text, p) != Some(at) => p,
         _ => at,
+    }
+}
+
+/// The first cluster boundary at or past `at` (`at` itself on a boundary,
+/// else the end of the cluster `at` is in).
+fn cluster_end(text: &str, at: usize) -> usize {
+    let floor = pos::floor(text, at);
+    if floor == at && cluster_start(text, at) == at {
+        at
+    } else {
+        pos::next_grapheme(text, floor).unwrap_or(text.len())
     }
 }
 
@@ -100,16 +105,17 @@ impl Index {
     /// Count `text` whole, marking the way.
     pub fn new(text: &str) -> Index {
         let mut marks = vec![(0, 0)];
-        let (mut at, mut n, mut mark) = (0, 0, 0);
-        while let Some(next) = pos::next_grapheme(text, at) {
-            if !is_break(&text[at..next]) {
-                n += 1;
+        let (mut n, mut mark) = (0, 0);
+        loop {
+            let goal = mark + STEP;
+            if goal > text.len() {
+                n += pos::count_chars(text, mark..text.len());
+                break;
             }
-            at = next;
-            if at - mark >= STEP {
-                marks.push((at, n));
-                mark = at;
-            }
+            let next = cluster_end(text, goal);
+            n += pos::count_chars(text, mark..next);
+            marks.push((next, n));
+            mark = next;
         }
         Index { marks, len: text.len(), total: n }
     }
