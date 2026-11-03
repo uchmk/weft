@@ -120,6 +120,10 @@ body = "{0} の変更はまだ保存されていません。"
 save = "保存して終了"
 discard = "保存せずに終了"
 cancel = "やめる"
+spoken = "{0}。{1} Enter: {2}、N: {3}、Esc: {4}"
+
+[edit]
+nothing = "{0}: ここでは何もできません"
 
 [status]
 line_col = "{0} 行 {1} 列"

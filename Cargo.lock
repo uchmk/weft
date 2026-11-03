@@ -4067,6 +4067,7 @@ version = "0.2.1"
 dependencies = [
  "eframe",
  "egui",
+ "ito-a11y",
  "ito-bugreport",
  "ito-common",
  "ito-confirm",

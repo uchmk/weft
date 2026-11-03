@@ -147,9 +147,10 @@ struct App {
     saving: usize,
     /// When the window opened: typing's clock (keys close together are one undo step).
     started: std::time::Instant,
-    /// What the bell lists, oldest first. `()` is where a click goes: weft
-    /// has no place to jump to yet (a file and a line, once it edits).
-    notices: Vec<ito_notices::Notice<()>>,
+    /// What the bell lists, oldest first. `go` is the file a notice is
+    /// about: its row, or a click on the system's notification for it, puts
+    /// that document in front when it is the one open.
+    notices: Vec<ito_notices::Notice<PathBuf>>,
     next_notice: u64,
     /// The list under the bell is open, and where the bell was last drawn.
     bell_open: bool,
@@ -167,8 +168,35 @@ struct App {
     keys: keymap::Keys,
     key_pending: Vec<Key>,
     key_notes: Vec<String>,
+    /// What each of the person's files warned of when last heard: a warning
+    /// goes under the bell once, and again only after it went away.
+    warned: Warned,
+    /// What the screen reader is to hear at the end of this frame.
+    said: Vec<String>,
     /// Quitting, once asked to (`None` while nobody has).
     quit: Option<Quit>,
+}
+
+/// The warnings last put under the bell, file by file (common.toml, the
+/// themes folder, the theme common.toml picks, config.toml, keymap.toml).
+#[derive(Default)]
+struct Warned {
+    common: Vec<String>,
+    themes: Vec<String>,
+    theme: Vec<String>,
+    config: Vec<String>,
+    keymap: Vec<String>,
+}
+
+/// The warnings in `now` that were not in `was`; `was` becomes `now`. A file
+/// read again says what it said before, and the theme is picked every frame:
+/// none of that is said twice.
+fn news(was: &mut Vec<String>, now: &[String]) -> Vec<String> {
+    let new = now.iter().filter(|w| !was.contains(w)).cloned().collect();
+    if was.as_slice() != now {
+        *was = now.to_vec();
+    }
+    new
 }
 
 /// Where quitting is. With changes not saved, the window asks first (save
@@ -203,19 +231,12 @@ impl App {
         }
         used.ppp = cc.egui_ctx.pixels_per_point();
         ito_common::runinfo::save("weft", &used);
-        let base = ito_common::base_dir();
-        let mut prefs = prefs::Prefs::load(base.clone());
-        let mut warnings: Vec<String> = prefs.common_warn.iter().chain(&prefs.theme_warn).cloned().collect();
+        let mut prefs = prefs::Prefs::load(ito_common::base_dir());
         let lang = i18n::resolve(prefs.common.language.as_deref());
-        let (table, errors) = i18n::table(&lang);
-        warnings.extend(errors);
-        let own = base.as_deref().map(prefs::keymap_path);
-        let (keys, mut key_notes) = load_keys(own.as_deref());
-        for w in warnings.iter().chain(&key_notes) {
-            eprintln!("weft: {w}");
-        }
-        // What common.toml got wrong goes under the bell too, once.
-        key_notes.extend(warnings);
+        // The lang files' errors; what the other files got wrong is heard below.
+        let (table, key_notes) = i18n::table(&lang);
+        // keymap.toml as read now makes the keys, as a later read does.
+        prefs.keymap_new.get_or_insert(None);
         prefs.watch(&cc.egui_ctx);
         prefs.apply_theme(&cc.egui_ctx);
         cc.egui_ctx.set_visuals(ito_theme::colors().visuals());
@@ -225,6 +246,8 @@ impl App {
         cc.egui_ctx.set_zoom_factor(prefs.common.scale_or_one());
         let wake = cc.egui_ctx.clone();
         let (files, done) = file_thread(cc.egui_ctx.clone());
+        // A click on a system notification weft showed brings this window forward.
+        notify::set_window(&cc.egui_ctx);
         let mut app = Self {
             table,
             prefs,
@@ -249,11 +272,19 @@ impl App {
             font: Some(font_reader(&cc.egui_ctx)),
             script,
             todo: Vec::new(),
-            keys,
+            keys: keymap::Keys::load(None).0,
             key_pending: Vec::new(),
             key_notes,
+            warned: Warned::default(),
+            said: Vec::new(),
             quit: None,
         };
+        // What the person's files got wrong goes under the bell, once.
+        app.take_keymap();
+        app.hear_files();
+        for w in &app.key_notes {
+            eprintln!("weft: {w}");
+        }
         if let Some(path) = file {
             app.open(&path);
         }
@@ -269,7 +300,7 @@ impl App {
             Ok(ed) => {
                 if ed.locked().is_some() {
                     let title = self.table.trf("file.locked", &[&name]);
-                    self.notice(ito_notices::Kind::Warn, title);
+                    self.outcome(ito_notices::Kind::Warn, title, Some(path.to_path_buf()));
                 }
                 self.editor = Some(ed);
                 self.tree = None;
@@ -277,7 +308,7 @@ impl App {
             }
             Err(e) => {
                 let title = self.table.trf("file.open_failed", &[&name, &e]);
-                self.notice(ito_notices::Kind::Err, title);
+                self.outcome(ito_notices::Kind::Err, title, None);
             }
         }
     }
@@ -315,6 +346,8 @@ impl App {
             keys,
             key_pending: Vec::new(),
             key_notes: Vec::new(),
+            warned: Warned::default(),
+            said: Vec::new(),
             quit: None,
         }
     }
@@ -341,6 +374,10 @@ impl App {
             self.help.close();
             self.palette = None;
             self.bell_open = false;
+            if self.quit != Some(Quit::Asking) {
+                // The question has no focus of its own to be read out by.
+                self.announce(self.quit_spoken());
+            }
             self.quit = Some(Quit::Asking);
         } else {
             self.quit = Some(Quit::Go);
@@ -398,18 +435,30 @@ impl App {
         }
     }
 
+    /// The open document's file name (none: empty).
+    fn file_name(&self) -> String {
+        self.editor
+            .as_ref()
+            .and_then(engine::Editor::path)
+            .and_then(Path::file_name)
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    }
+
+    /// The question before quitting as the screen reader says it: what it
+    /// asks, and the key of each answer.
+    fn quit_spoken(&self) -> String {
+        let t = &self.table;
+        let body = t.trf("quit.body", &[&self.file_name()]);
+        t.trf("quit.spoken", &[t.tr("quit.title"), &body, t.tr("quit.save"), t.tr("quit.discard"), t.tr("quit.cancel")])
+    }
+
     /// The question before quitting, over everything; a click is its key.
     fn quit_question(&mut self, ctx: &egui::Context) {
         if self.quit != Some(Quit::Asking) {
             return;
         }
-        let name = self
-            .editor
-            .as_ref()
-            .and_then(engine::Editor::path)
-            .and_then(Path::file_name)
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let name = self.file_name();
         let c = ito_theme::colors();
         let style = ito_confirm::Style {
             panel: c.panel,
@@ -502,14 +551,27 @@ impl App {
             "file.open_in_editor" => self.open_in_editor(),
             _ if self.editing() => {
                 let (now, page) = (self.now_ms(), self.view.page());
-                if let Some(ed) = &mut self.editor {
-                    if commands::edit(ed, name, now, page).is_some() {
-                        self.view.follow = true;
-                    }
+                let Some(ed) = &mut self.editor else { return };
+                let done = commands::edit(ed, name, now, page);
+                if done.is_some() {
+                    self.view.follow = true;
+                }
+                if done == Some(false) {
+                    self.nothing_here(name);
                 }
             }
             _ => {}
         }
+    }
+
+    /// A command that does not apply at the caret changes nothing on the
+    /// screen: the screen reader says so. Only the named ones of the palette
+    /// (a structure command, undo): a caret move at the end of the text is
+    /// not news.
+    fn nothing_here(&mut self, name: &str) {
+        let Some(d) = commands::find(name).filter(|d| d.palette) else { return };
+        let text = self.table.trf("edit.nothing", &[self.table.tr_desc(d.desc)]);
+        self.announce(text);
     }
 
     /// A job for the file thread; `false` when the thread is gone (told of).
@@ -518,14 +580,15 @@ impl App {
             return true;
         }
         let title = self.table.tr("file.no_thread").to_owned();
-        self.notice(ito_notices::Kind::Err, title);
+        self.outcome(ito_notices::Kind::Err, title, None);
         false
     }
 
     /// Ctrl+S: what the document is now goes to the file thread.
     fn save(&mut self) {
         let Some(ed) = &self.editor else { return };
-        let name = ed.path().map(|p| p.display().to_string()).unwrap_or_default();
+        let path = ed.path().map(Path::to_path_buf);
+        let name = path.as_deref().map(|p| p.display().to_string()).unwrap_or_default();
         match ed.save_job() {
             Ok(job) => {
                 if self.send_file(FileJob::Save(job)) {
@@ -534,11 +597,11 @@ impl App {
             }
             Err(engine::NoSave::NoPath) => {
                 let title = self.table.tr("file.no_path").to_owned();
-                self.notice(ito_notices::Kind::Warn, title);
+                self.outcome(ito_notices::Kind::Warn, title, None);
             }
             Err(engine::NoSave::Locked(_)) => {
                 let title = self.table.trf("file.locked", &[&name]);
-                self.notice(ito_notices::Kind::Warn, title);
+                self.outcome(ito_notices::Kind::Warn, title, path);
             }
         }
     }
@@ -549,7 +612,7 @@ impl App {
         let Some(ed) = &self.editor else { return };
         let Some(path) = ed.path().map(Path::to_path_buf) else {
             let title = self.table.tr("file.no_path").to_owned();
-            self.notice(ito_notices::Kind::Warn, title);
+            self.outcome(ito_notices::Kind::Warn, title, None);
             return;
         };
         let at = ed.editor_pos();
@@ -565,8 +628,12 @@ impl App {
     }
 
     /// What the file thread finished: a save marks the document clean (at the
-    /// version written) or is told of, everywhere `[notify]` says.
-    fn take_files(&mut self) {
+    /// version written) or goes under the bell; while the window is behind
+    /// another (or minimized), a failed save is also told everywhere
+    /// `[notify]` says, and a click on the system's notification comes back
+    /// to the file (`clicked`).
+    fn take_files(&mut self, ctx: &egui::Context) {
+        let behind = ctx.input(|i| !i.focused || i.viewport().minimized == Some(true));
         while let Ok(d) = self.done.try_recv() {
             match d {
                 FileDone::Saved { version, path, result } => {
@@ -578,18 +645,23 @@ impl App {
                                 ed.saved(version);
                             }
                             let short = path.file_name().map_or(name.clone(), |n| n.to_string_lossy().into_owned());
-                            self.note = Some(self.table.trf("file.saved", &[&short]));
+                            let note = self.table.trf("file.saved", &[&short]);
+                            self.announce(note.clone());
+                            self.note = Some(note);
                         }
                         Err(e) => {
                             let title = self.table.trf("file.save_failed", &[&name, &e]);
-                            notify::tell(&self.prefs.notify, self.table.tr("notify.save_failed"), &title, self.table.tr("notify.open"));
-                            self.notice(ito_notices::Kind::Err, title);
+                            let id = self.outcome(ito_notices::Kind::Err, title.clone(), Some(path));
+                            if behind {
+                                let t = &self.table;
+                                notify::tell(&self.prefs.notify, t.tr("notify.save_failed"), &title, id, t.tr("notify.open"));
+                            }
                         }
                     }
                 }
                 FileDone::OpenFailed(e) => {
                     let title = self.table.trf("file.editor_failed", &[&e]);
-                    self.notice(ito_notices::Kind::Err, title);
+                    self.outcome(ito_notices::Kind::Err, title, None);
                 }
             }
         }
@@ -787,34 +859,56 @@ impl App {
 
     /// common.toml changed (the settings, another app at the same desk, an
     /// editor): the language, the theme and the scale follow; keymap.toml's
-    /// change reloads the keys. What a writer could not do goes under the bell.
+    /// change reloads the keys. What a writer could not do, and what the
+    /// person's files (common.toml, the themes, config.toml, keymap.toml, the
+    /// lang files) got wrong, goes under the bell: each warning once.
     fn sync_common(&mut self, ctx: &egui::Context) {
         self.prefs.pump();
         if let Some(e) = self.prefs.failed.take() {
             self.key_notes.push(e);
         }
-        match self.prefs.keymap_new.take() {
-            Some(None) => {
-                let own = self.prefs.base.as_deref().map(prefs::keymap_path);
-                let (keys, notes) = load_keys(own.as_deref());
-                self.keys = keys;
-                self.key_pending.clear();
-                self.key_notes.extend(notes);
-            }
-            Some(Some(e)) => self.key_notes.push(e),
-            None => {}
-        }
+        self.take_keymap();
         for e in self.sync_lang() {
             self.key_notes.push(e);
         }
         self.prefs.apply_theme(ctx);
-        if let Some(e) = self.prefs.theme_err.take() {
-            self.key_notes.push(e);
-        }
+        self.hear_files();
         let scale = self.prefs.common.scale_or_one();
         if ctx.zoom_factor() != scale {
             ctx.set_zoom_factor(scale);
         }
+    }
+
+    /// keymap.toml read again: the keys are made again from it (a chord
+    /// half typed is dropped), and what it got wrong, or why it could not be
+    /// read (the keys stay), goes under the bell if it is news.
+    fn take_keymap(&mut self) {
+        let now = match self.prefs.keymap_new.take() {
+            Some(None) => {
+                let (keys, warnings) = keys_of(&self.prefs);
+                self.keys = keys;
+                self.key_pending.clear();
+                warnings
+            }
+            Some(Some(e)) => vec![e],
+            None => return,
+        };
+        let new = news(&mut self.warned.keymap, &now);
+        self.key_notes.extend(new);
+    }
+
+    /// What common.toml, the themes folder, the theme common.toml picks and
+    /// config.toml warn of now; the warnings not heard before go under the
+    /// bell. (The settings show them all, as they are.)
+    fn hear_files(&mut self) {
+        let (p, w) = (&self.prefs, &mut self.warned);
+        let new = [
+            news(&mut w.common, &p.common_warn),
+            news(&mut w.themes, &p.theme_warn),
+            news(&mut w.theme, p.theme_err.as_slice()),
+            news(&mut w.config, &p.notify_warn),
+        ];
+        self.key_notes.extend(new.into_iter().flatten());
     }
 
     /// The table follows common.toml's language; the lang files' errors come back.
@@ -968,8 +1062,8 @@ impl App {
         }
     }
 
-    /// One line under the bell.
-    fn notice(&mut self, kind: ito_notices::Kind, title: String) {
+    /// One line under the bell, about the file `go` (if any); its id.
+    fn notice(&mut self, kind: ito_notices::Kind, title: String, go: Option<PathBuf>) -> u64 {
         self.next_notice += 1;
         self.notices.push(ito_notices::Notice {
             id: self.next_notice,
@@ -977,15 +1071,52 @@ impl App {
             kind,
             title,
             note: None,
-            go: None,
+            go,
             read: false,
         });
+        self.next_notice
     }
 
-    /// What the files got wrong, and what a writer could not do, go under the bell.
+    /// How something the person asked for came out: under the bell, and
+    /// said to the screen reader (the bell's line takes no focus).
+    fn outcome(&mut self, kind: ito_notices::Kind, title: String, go: Option<PathBuf>) -> u64 {
+        self.announce(title.clone());
+        self.notice(kind, title, go)
+    }
+
+    /// `text` for the screen reader, at the end of this frame.
+    fn announce(&mut self, text: String) {
+        self.said.push(text);
+    }
+
+    /// What the files got wrong, and what a writer could not do, go under the
+    /// bell. Not said aloud: nobody asked for it just now.
     fn take_notices(&mut self) {
         for title in std::mem::take(&mut self.key_notes) {
-            self.notice(ito_notices::Kind::Warn, title);
+            self.notice(ito_notices::Kind::Warn, title, None);
+        }
+    }
+
+    /// A notice picked (its row under the bell, or a click on its system
+    /// notification): it is read, and when it is about the open document,
+    /// whatever covers the document goes, so the file is in front.
+    fn open_notice(&mut self, id: u64) {
+        self.bell_open = false;
+        let Some(n) = self.notices.iter_mut().find(|n| n.id == id) else { return };
+        n.read = true;
+        let open = self.editor.as_ref().and_then(engine::Editor::path);
+        if n.go.is_some() && n.go.as_deref() == open {
+            self.settings_open = false;
+            self.help.close();
+            self.palette = None;
+        }
+    }
+
+    /// The system notifications clicked since the last frame (the click
+    /// brought the window forward already).
+    fn clicked(&mut self) {
+        for id in notify::take_clicks() {
+            self.open_notice(id);
         }
     }
 
@@ -1004,10 +1135,7 @@ impl App {
             kinds: [t.tr("notices.ok"), t.tr("notices.info"), t.tr("notices.warn"), t.tr("notices.err"), t.tr("notices.wait")],
         };
         match ito_notices::show(ctx, self.bell_at, &self.notices, &words) {
-            Some(ito_notices::Action::Open(_, id)) => {
-                self.notices.iter_mut().filter(|n| n.id == id).for_each(|n| n.read = true);
-                self.bell_open = false;
-            }
+            Some(ito_notices::Action::Open(_, id)) => self.open_notice(id),
             Some(ito_notices::Action::ReadAll) => self.notices.iter_mut().for_each(|n| n.read = true),
             Some(ito_notices::Action::Close) => self.bell_open = false,
             None => {}
@@ -1029,7 +1157,8 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.sync_common(&ctx);
-        self.take_files();
+        self.clicked();
+        self.take_files(&ctx);
         self.quit_after_save(&ctx);
         // The window's close (the bar's ×, Alt+F4) asks first, as Ctrl+Q does.
         if ctx.input(|i| i.viewport().close_requested()) && self.quit != Some(Quit::Go) {
@@ -1112,6 +1241,10 @@ impl eframe::App for App {
             }
         }
         self.quit_question(&ctx);
+        // What the screen reader hears (and `--keys`' <Announced:> checks).
+        for m in std::mem::take(&mut self.said) {
+            ito_a11y::announce(ui, &m);
+        }
         self.take_tree();
         self.script(&ctx);
         // Last, so the edges of the frameless window win over what is under them.
@@ -1151,22 +1284,11 @@ impl eframe::App for App {
     }
 }
 
-/// The keys: the person's keymap.toml at `own` (none is fine) over the
-/// defaults. What the file got wrong comes back as the lines to show.
-fn load_keys(own: Option<&std::path::Path>) -> (keymap::Keys, Vec<String>) {
-    let mut notes = Vec::new();
-    let text = own.and_then(|p| match std::fs::read_to_string(p) {
-        Ok(t) => Some(t),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => {
-            notes.push(format!("{}: {e}", p.display()));
-            None
-        }
-    });
-    let path = own.map(|p| p.display().to_string()).unwrap_or_default();
-    let (keys, warnings) = keymap::Keys::load(text.as_deref().map(|t| (path.as_str(), t)));
-    notes.extend(warnings);
-    (keys, notes)
+/// The keys: the person's keymap.toml as `p` last read it (none is fine) over
+/// the defaults. What the file got wrong comes back as the lines to show.
+fn keys_of(p: &prefs::Prefs) -> (keymap::Keys, Vec<String>) {
+    let path = p.base.as_deref().map(|b| prefs::keymap_path(b).display().to_string()).unwrap_or_default();
+    keymap::Keys::load(p.keymap.as_deref().map(|t| (path.as_str(), t)))
 }
 
 /// `--keys SCRIPT` as its steps; `None` when the arguments are not that.
@@ -1361,11 +1483,129 @@ mod tests {
         let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while app.saving > 0 && std::time::Instant::now() < until {
             std::thread::sleep(std::time::Duration::from_millis(10));
-            app.take_files();
+            app.take_files(&ctx);
         }
         app.quit_after_save(&ctx);
         assert_eq!(app.quit, Some(Quit::Go), "saved, so the window closes");
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "ba");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 5.4: What the person's files got wrong goes under the bell once: the
+    /// theme picked every frame, or a file read again, adds nothing; a
+    /// warning that went away and came back is told again.
+    #[test]
+    fn a_file_warning_goes_under_the_bell_once() {
+        let mut app = App::for_tests();
+        let frame = |app: &mut App| {
+            app.take_keymap();
+            app.hear_files();
+            app.take_notices();
+        };
+        app.prefs.theme_err = Some("theme `nope` is not there".to_owned());
+        app.prefs.common_warn = vec!["common.toml: scale: not a number".to_owned()];
+        app.prefs.notify_warn = vec!["config.toml: [notify] system: `done` is not an event".to_owned()];
+        for _ in 0..3 {
+            frame(&mut app);
+        }
+        assert_eq!(app.notices.len(), 3, "{:?}", app.notices);
+        assert!(app.notices.iter().all(|n| n.kind == ito_notices::Kind::Warn && n.go.is_none()));
+        assert!(app.said.is_empty(), "nobody asked: nothing is said aloud");
+
+        // The theme is found, then lost again.
+        app.prefs.theme_err = None;
+        frame(&mut app);
+        app.prefs.theme_err = Some("theme `nope` is not there".to_owned());
+        frame(&mut app);
+        assert_eq!(app.notices.len(), 4);
+
+        // keymap.toml broken, read twice; then unreadable.
+        app.prefs.keymap = Some("[edit\n".to_owned());
+        app.prefs.keymap_new = Some(None);
+        frame(&mut app);
+        let broken = app.notices.len();
+        assert!(broken > 4, "a broken keymap.toml is told");
+        app.prefs.keymap_new = Some(None);
+        frame(&mut app);
+        assert_eq!(app.notices.len(), broken, "read again, it says nothing new");
+        app.prefs.keymap_new = Some(Some("keymap.toml: Access is denied.".to_owned()));
+        frame(&mut app);
+        assert_eq!(app.notices.len(), broken + 1);
+    }
+
+    /// 5.5: A notice about the open file, picked under the bell (or by a
+    /// click on its system notification), puts the document in front: the
+    /// settings, the help and the palette go. One about another file is
+    /// only read.
+    #[test]
+    fn a_notice_about_the_open_file_puts_it_in_front() {
+        let dir = std::env::temp_dir().join(format!("weft-notice-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("n.md");
+        std::fs::write(&file, "a").unwrap();
+        let mut app = App::for_tests();
+        app.open(&file);
+        let other = app.notice(ito_notices::Kind::Err, "b.md".to_owned(), Some(dir.join("b.md")));
+        let here = app.outcome(ito_notices::Kind::Err, "n.md".to_owned(), Some(file.clone()));
+        assert_ne!(other, here);
+        let read = |app: &App, id| app.notices.iter().find(|n| n.id == id).unwrap().read;
+
+        app.settings_open = true;
+        app.bell_open = true;
+        app.open_notice(other);
+        assert!(read(&app, other) && !app.bell_open);
+        assert!(app.settings_open, "another file's notice leaves the screen as it is");
+
+        app.palette = Some(ito_palette::View::new());
+        app.open_notice(here);
+        assert!(read(&app, here));
+        assert!(!app.settings_open && app.palette.is_none() && !app.help.open);
+        assert!(app.editing(), "the document has the keys");
+        // An id that is no notice (a click on an old run's notification).
+        app.open_notice(99);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 7.3: What a screen reader hears: a save and one that cannot be, a
+    /// command that does nothing at the caret, and the question before
+    /// quitting (once, with its keys); a caret move that goes nowhere is
+    /// not news.
+    #[test]
+    fn the_screen_reader_hears_saves_nothing_to_do_and_the_quit_question() {
+        let ctx = egui::Context::default();
+        let mut app = App::for_tests();
+        app.editor = Some(engine::Editor::new("a"));
+        app.run_key(&ctx, keymap::Cmd::Run("edit.undo"));
+        assert_eq!(app.said, ["Undo: nothing to do here"]);
+        app.run_key(&ctx, keymap::Cmd::Run("cursor.left"));
+        assert_eq!(app.said.len(), 1, "a move at the start is not news");
+        app.run_key(&ctx, keymap::Cmd::Run("file.save"));
+        assert_eq!(app.said.len(), 2);
+        assert!(app.said[1].starts_with("This document has no file yet"), "{:?}", app.said);
+        assert_eq!(app.notices.len(), 1, "and it is under the bell");
+
+        app.said.clear();
+        app.editor.as_mut().unwrap().insert("b", 0);
+        app.quit(&ctx);
+        app.quit(&ctx);
+        assert_eq!(app.said.len(), 1, "asked twice (the window's close), said once");
+        let q = &app.said[0];
+        assert!(q.starts_with("Unsaved changes. ") && q.contains("Enter: Save and quit") && q.ends_with("Esc: Cancel"), "{q}");
+
+        let dir = std::env::temp_dir().join(format!("weft-said-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("s.md");
+        std::fs::write(&file, "a").unwrap();
+        let mut app = App::for_tests();
+        app.open(&file);
+        app.editor.as_mut().unwrap().insert("b", 0);
+        app.save();
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while app.saving > 0 && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            app.take_files(&ctx);
+        }
+        assert_eq!(app.said, ["Saved s.md"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

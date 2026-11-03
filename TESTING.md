@@ -56,6 +56,9 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 | 5.1 | Put a line weft does not know in `keymap.toml` (an action named `nothing`) and start weft | The bell shows 1 unread; opening it, a "check" notice says `nothing` is no action of weft, and the other keys still work |
 | 5.2 | Break `common.toml` (an unclosed `[`) while weft is open | A notice under the bell says what could not be read; the window keeps its theme and language |
 | 5.3 | Press "Mark all read" | The bell's count goes away |
+| 5.4 | While weft is open, put a theme that does not exist in `common.toml`, then break `keymap.toml`, then name an event weft does not know under `[notify]` in `config.toml`; save each file again unchanged; then fix the theme and break it again | Each comes under the bell once as a "check" notice (not once a frame, not again when the same file is read again); the theme broken the second time is told again. None of them is read out by a screen reader |
+| 5.5 | Make the open file read-only and press `Ctrl+S`; open the settings (or the palette), then the bell, and pick the "failed" notice | The bell and the settings (the palette) close and the document is in front with the keys; picking a notice about something else only marks it read |
+| 5.6 | Make FILE.md read-only, run `weft FILE.md --keys "x<Wait:3000><C-s>"` and click another window within the 3 seconds; then click the "Could not save" system notification (or its Open button) | weft comes to the front with the document in front and the notice read. Done again with weft left in front, the failure only goes under the bell: no system notification, sound or webhook |
 
 ## 6. Scale
 
@@ -71,6 +74,9 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 |---|---|---|
 | 7.1 | Run `weft --keys <script>` with `WEFT_KEYS_DONE` set to a file, the script `<F1><Shot:help><Esc><C-,><State:settings><Quit>` | The window runs the keys without a hand on them; the file says `keys: done`, the state `settings` says `screen: settings` and `page: 0`, and a picture of the help is saved |
 | 7.2 | Run a script with `<Lang:en>` before `<F1>` | The help in the picture is in English, and common.toml's language is left as it was |
+| 7.3 | With a screen reader on: press `Ctrl+Z` with nothing to undo, `Ctrl+S`, `Ctrl+S` on a read-only file, `Ctrl+Q` with changes, and `→` at the end of the text | It says "Undo: nothing to do here", "Saved FILE.md", "Could not save …", and the question with its keys (Enter: Save and quit, N: Quit without saving, Esc: Cancel) once; the `→` says nothing |
+| 7.4 | Run `weft FILE.md --keys "<Lang:en><C-z><Announced:Undo: nothing to do here><C-s><Announced:Saved><Quit>"` with `WEFT_KEYS_DONE` set; then the same with `<Announced:never said>` for the first check | The first run's file says `keys: done`; the second stops at that step, says `` `never said` was not announced `` and exits with 3 |
+| 7.5 | In a build with `--features test-hooks`, make FILE.md read-only and run `weft FILE.md --keys "<Lang:en>x<C-s><Announced:Could not save><Quit>"` with `ITO_NOTIFY_SINK` set to a file, the window behind another (started from a terminal that keeps the focus) | No system notification shows; the sink file has one `[[toast]]` titled "Could not save" whose `tag` is the notice's number, with an Open button. A build without the feature (as released) ignores `ITO_NOTIFY_SINK` |
 
 ## 8. Editing
 

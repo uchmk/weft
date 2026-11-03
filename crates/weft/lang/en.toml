@@ -126,6 +126,12 @@ body = "{0} has changes that are not saved."
 save = "Save and quit"
 discard = "Quit without saving"
 cancel = "Cancel"
+# The question as a screen reader says it: {0} title, {1} body, then the answers' names.
+spoken = "{0}. {1} Enter: {2}, N: {3}, Esc: {4}"
+
+# Said to a screen reader when a command does not apply at the caret.
+[edit]
+nothing = "{0}: nothing to do here"
 
 [status]
 line_col = "Ln {0}, Col {1}"

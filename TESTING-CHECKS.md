@@ -1,6 +1,6 @@
 # Checklist
 
-44 checks in TESTING.md, 39 left for a person.
+50 checks in TESTING.md, 42 left for a person.
 
 ## 1. Start
 
@@ -45,9 +45,12 @@
 
 ## 5. Notices
 
+自動テスト済みなので下には出していない: 5.4, 5.5
+
 - [ ] **5.1** Put a line weft does not know in `keymap.toml` (an action named `nothing`) and start weft → The bell shows 1 unread; opening it, a "check" notice says `nothing` is no action of weft, and the other keys still work 〔未訳〕
 - [ ] **5.2** Break `common.toml` (an unclosed `[`) while weft is open → A notice under the bell says what could not be read; the window keeps its theme and language 〔未訳〕
 - [ ] **5.3** Press "Mark all read" → The bell's count goes away 〔未訳〕
+- [ ] **5.6** Make FILE.md read-only, run `weft FILE.md --keys "x<Wait:3000><C-s>"` and click another window within the 3 seconds; then click the "Could not save" system notification (or its Open button) → weft comes to the front with the document in front and the notice read. Done again with weft left in front, the failure only goes under the bell: no system notification, sound or webhook 〔未訳〕
 
 ## 6. Scale
 
@@ -57,8 +60,12 @@
 
 ## 7. Key scripts
 
+自動テスト済みなので下には出していない: 7.3
+
 - [ ] **7.1** Run `weft --keys <script>` with `WEFT_KEYS_DONE` set to a file, the script `<F1><Shot:help><Esc><C-,><State:settings><Quit>` → The window runs the keys without a hand on them; the file says `keys: done`, the state `settings` says `screen: settings` and `page: 0`, and a picture of the help is saved 〔未訳〕
 - [ ] **7.2** Run a script with `<Lang:en>` before `<F1>` → The help in the picture is in English, and common.toml's language is left as it was 〔未訳〕
+- [ ] **7.4** Run `weft FILE.md --keys "<Lang:en><C-z><Announced:Undo: nothing to do here><C-s><Announced:Saved><Quit>"` with `WEFT_KEYS_DONE` set; then the same with `<Announced:never said>` for the first check → The first run's file says `keys: done`; the second stops at that step, says `` `never said` was not announced `` and exits with 3 〔未訳〕
+- [ ] **7.5** In a build with `--features test-hooks`, make FILE.md read-only and run `weft FILE.md --keys "<Lang:en>x<C-s><Announced:Could not save><Quit>"` with `ITO_NOTIFY_SINK` set to a file, the window behind another (started from a terminal that keeps the focus) → No system notification shows; the sink file has one `[[toast]]` titled "Could not save" whose `tag` is the notice's number, with an Open button. A build without the feature (as released) ignores `ITO_NOTIFY_SINK` 〔未訳〕
 
 ## 8. Editing
 
