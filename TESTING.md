@@ -32,13 +32,14 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 | # | Do | Expect |
 |---|---|---|
 | 3.1 | Press `Ctrl+,` | The settings open on the General page (language, size, clock) |
-| 3.2 | Press `Ctrl+Tab` until the pages come round | General, Theme, Keys, Notifications, Advanced and About, in that order |
+| 3.2 | Press `Ctrl+Tab` until the pages come round | General, Theme, Editing, Keys, Notifications, Advanced and About, in that order |
 | 3.3 | On the Keys page, change the key of Quit to `Ctrl+W` | The row shows `Ctrl+W`; `Ctrl+W` in the window quits, `Ctrl+Q` no longer does |
 | 3.4 | Open `keymap.toml` in weft's config folder after 3.3, then press ↺ on the row | Only the changed binding is written; after ↺ nothing of it is left |
 | 3.5 | On the Keys page, give a binding `F12` | The page says weft reads `F12` itself, so the binding never runs |
 | 3.6 | On the Notifications page, press the test button of "Could not save" with the window behind another one | A system notification "weft: test notification" arrives (and the sound, if one is chosen) |
 | 3.7 | Change the theme on the Theme page | The window and the sample change colour at once; another uchmk app open at the same time follows within 2 seconds |
 | 3.8 | Press `Esc` | The settings close and the window comes back |
+| 3.9 | On the Editing page, pick 2 as the tab width, close the settings and press `Tab` in a paragraph, then `Tab` with the IME composing; open `config.toml` in weft's config folder | The page offers 2, 4 and 8 (4 at first); `Tab` puts in 2 spaces at once and the focus stays in the text (no button of the bar lights up); while composing the IME keeps the key; the file has `tab_width = 2` under `[editor]` and its other lines as they were |
 
 ## 4. Command palette
 
@@ -92,6 +93,7 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 | 8.8 | Type Japanese with the IME on, then press `Enter` to commit | The text being composed shows at the caret, the candidate window sits by the caret, and the status bar says "Composing" by the clock until it is committed; the `Enter` commits and does not break the line |
 | 8.9 | Open a file with CRLF line ends that holds `é` (an `e` and a combining accent), `漢字` and `👍🏽`; select part of it with `Shift+→`, then press `Ctrl+A`; open a file in Shift_JIS | The status bar counts the characters without the line breaks (`é` and `👍🏽` are one each) and, while something is selected, says "Selected" with the count of the selection (with `Ctrl+A`, the whole count); the Shift_JIS file shows no count |
 | 8.10 | Type full-width spaces (`　`) between words; end a paragraph's line with two spaces and go on on the next line; end a paragraph's last line, a heading and a line in a ` ``` ` fence with two spaces too | Each full-width space has a thin, faint box where it is; the two spaces that break the paragraph's line have a faint gold tint with a small dot on each, the others none (and a `\` break none) |
+| 8.11 | In a table press `Tab` and `Shift+Tab`; on a list item press `Tab` and `Shift+Tab`; in a paragraph press `Tab`, then `Shift+Tab`; select three lines and press `Tab`, then `Shift+Tab` | In the table the caret goes to the next and the previous cell (the table is lined up); the item goes one level in and back out with the items under it; in the paragraph the tab width of spaces goes in and comes out again; each selected line gets the spaces and loses them again. One `Ctrl+Z` takes back each press; in a read-only file nothing changes |
 | 8.12 | Open a `.md` of about 8 MB (a few lines copied over and over); type quickly; press `Ctrl+A`; press `Ctrl+Home`, then `Ctrl+Shift+End`; type over the selection, then press `Ctrl+Z` | No key hitches: each shows at once. The document's count stays the old one until the new reading comes; "Selected" shows the selection's count, or "Selected …" until the reading comes and then the count (after `Ctrl+Z` the selection is back, and its count with it) |
 | 8.13 | Look at the full-width spaces and the hard-break marks of 8.10 in a light and a dark theme; type quickly in a long file that has them | The marks are seen but quieter than the text in both themes; typing never waits for them |
 

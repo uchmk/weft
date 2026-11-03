@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use ito_mdedit::Change;
-use ito_textbuf::{pos, Doc, Selection, Transaction};
+use ito_textbuf::{pos, Doc, Edit, Selection, Transaction};
 
 /// A caret move. `PageUp` / `PageDown` carry how many lines a page is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,12 +58,18 @@ pub struct Editor {
     locked: Option<Locked>,
     /// The column (in graphemes) up and down aim for, kept over short lines.
     goal: Option<usize>,
+    /// The spaces Tab puts in (and Shift+Tab takes away) outside tables and
+    /// lists: the settings' tab width.
+    tab: usize,
 }
+
+/// The tab width a document starts with, until the settings say otherwise.
+pub const TAB_WIDTH: usize = 4;
 
 impl Editor {
     /// A document of `text` with no file behind it.
     pub fn new(text: &str) -> Editor {
-        Editor { doc: Doc::new(text), path: None, locked: None, goal: None }
+        Editor { doc: Doc::new(text), path: None, locked: None, goal: None, tab: TAB_WIDTH }
     }
 
     /// Read `path`. A file that is not there yet opens empty (saving creates
@@ -333,6 +339,89 @@ impl Editor {
         let Some(change) = command(self.text(), before.head) else { return false };
         self.goal = None;
         self.doc.apply(Transaction::from_change(&change, before)).is_ok()
+    }
+
+    /// The spaces [`Editor::indent`] and [`Editor::outdent`] take when the
+    /// command does not say.
+    pub fn tab_width(&self) -> usize {
+        self.tab
+    }
+    pub fn set_tab_width(&mut self, n: usize) {
+        self.tab = n.max(1);
+    }
+
+    /// The lines a Tab or Shift+Tab works on when the selection crosses a
+    /// line break: every line it touches, less the last when it ends at that
+    /// line's start. `None` when the selection is within one line.
+    fn selected_lines(&self) -> Option<std::ops::RangeInclusive<usize>> {
+        let r = self.doc.selection().range();
+        let (first, last) = (self.line_of(r.start), self.line_of(r.end));
+        if first == last {
+            return None;
+        }
+        let ends_at_start = self.line_range(last).is_some_and(|l| l.start == r.end);
+        Some(first..=if ends_at_start { last - 1 } else { last })
+    }
+
+    /// Tab outside a table and a list, as one undo step: `width` spaces over
+    /// the selection, or, when the selection crosses a line break, `width`
+    /// spaces before each of its lines (empty lines are left alone).
+    pub fn indent(&mut self, width: usize) -> bool {
+        if !self.writable() || width == 0 {
+            return false;
+        }
+        let before = self.doc.selection();
+        let pad = " ".repeat(width);
+        let tx = match self.selected_lines() {
+            None => {
+                let r = before.range();
+                Transaction::new(vec![Edit { range: r.clone(), text: pad }], before, Selection::caret(r.start + width))
+            }
+            Some(lines) => {
+                let starts: Vec<usize> = lines.filter_map(|l| self.line_range(l)).filter(|r| !r.is_empty()).map(|r| r.start).collect();
+                if starts.is_empty() {
+                    return false;
+                }
+                // A position at a line's start stays there, so the selection
+                // takes in the spaces put before its first line.
+                let shift = |p: usize| p + width * starts.iter().filter(|&&s| s < p).count();
+                let after = Selection { anchor: shift(before.anchor), head: shift(before.head) };
+                // From the last line up: each edit leaves the lines above where they were.
+                let edits = starts.iter().rev().map(|&s| Edit { range: s..s, text: pad.clone() }).collect();
+                Transaction::new(edits, before, after)
+            }
+        };
+        self.goal = None;
+        self.doc.apply(tx).is_ok()
+    }
+
+    /// Shift+Tab outside a table and a list, as one undo step: up to `width`
+    /// spaces off the start of the caret's line, or of each line of a
+    /// selection that crosses a line break. `false` when no line starts with
+    /// a space.
+    pub fn outdent(&mut self, width: usize) -> bool {
+        if !self.writable() || width == 0 {
+            return false;
+        }
+        let before = self.doc.selection();
+        let lines = self.selected_lines().unwrap_or_else(|| {
+            let l = self.line_of(before.head);
+            l..=l
+        });
+        let text = self.text();
+        let cuts: Vec<(usize, usize)> = lines
+            .filter_map(|l| self.line_range(l))
+            .map(|r| (r.start, text[r].bytes().take_while(|&b| b == b' ').take(width).count()))
+            .filter(|&(_, n)| n > 0)
+            .collect();
+        if cuts.is_empty() {
+            return false;
+        }
+        let shift = |p: usize| p - cuts.iter().map(|&(s, n)| p.saturating_sub(s).min(n)).sum::<usize>();
+        let after = Selection { anchor: shift(before.anchor), head: shift(before.head) };
+        let edits = cuts.iter().rev().map(|&(s, n)| Edit { range: s..s + n, text: String::new() }).collect();
+        self.goal = None;
+        self.doc.apply(Transaction::new(edits, before, after)).is_ok()
     }
 
     pub fn undo(&mut self) -> bool {

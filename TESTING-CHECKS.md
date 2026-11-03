@@ -1,6 +1,6 @@
 # Checklist
 
-58 checks in TESTING.md, 45 left for a person.
+60 checks in TESTING.md, 46 left for a person.
 
 ## 1. Start
 
@@ -28,12 +28,13 @@
 自動テスト済みなので下には出していない: 3.4
 
 - [ ] **3.1** Press `Ctrl+,` → The settings open on the General page (language, size, clock) 〔未訳〕
-- [ ] **3.2** Press `Ctrl+Tab` until the pages come round → General, Theme, Keys, Notifications, Advanced and About, in that order 〔未訳〕
+- [ ] **3.2** Press `Ctrl+Tab` until the pages come round → General, Theme, Editing, Keys, Notifications, Advanced and About, in that order 〔未訳〕
 - [ ] **3.3** On the Keys page, change the key of Quit to `Ctrl+W` → The row shows `Ctrl+W`; `Ctrl+W` in the window quits, `Ctrl+Q` no longer does 〔未訳〕
 - [ ] **3.5** On the Keys page, give a binding `F12` → The page says weft reads `F12` itself, so the binding never runs 〔未訳〕
 - [ ] **3.6** On the Notifications page, press the test button of "Could not save" with the window behind another one → A system notification "weft: test notification" arrives (and the sound, if one is chosen) 〔未訳〕
 - [ ] **3.7** Change the theme on the Theme page → The window and the sample change colour at once; another uchmk app open at the same time follows within 2 seconds 〔未訳〕
 - [ ] **3.8** Press `Esc` → The settings close and the window comes back 〔未訳〕
+- [ ] **3.9** On the Editing page, pick 2 as the tab width, close the settings and press `Tab` in a paragraph, then `Tab` with the IME composing; open `config.toml` in weft's config folder → The page offers 2, 4 and 8 (4 at first); `Tab` puts in 2 spaces at once and the focus stays in the text (no button of the bar lights up); while composing the IME keeps the key; the file has `tab_width = 2` under `[editor]` and its other lines as they were 〔未訳〕
 
 ## 4. Command palette
 
@@ -69,7 +70,7 @@
 
 ## 8. Editing
 
-自動テスト済みなので下には出していない: 8.6, 8.9, 8.10
+自動テスト済みなので下には出していない: 8.6, 8.9, 8.10, 8.11
 
 - [ ] **8.1** Run `weft FILE.md` on a file with CRLF line ends and a BOM; move with `←` `→` over `é`, `漢字` and `👍🏽` → The caret steps over a whole character each time (the emoji with its skin tone is one); the status bar says the line and column and, by the clock, `UTF-8`, `BOM` and `CRLF` 〔未訳〕
 - [ ] **8.2** Type a word, press `Enter`, type another; press `Ctrl+Z` three times, then `Ctrl+Y`; press `Backspace` three times quickly, then `Ctrl+Z` → The status bar says "Unsaved"; each `Ctrl+Z` takes back one step (the second word, the line break, the first word), and "Unsaved" goes once the text is back as it was read; `Ctrl+Y` puts the first word back. The three `Backspace`s come back with one `Ctrl+Z` 〔未訳〕

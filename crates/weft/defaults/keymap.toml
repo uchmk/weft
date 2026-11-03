@@ -222,3 +222,16 @@ desc = "Outdent the list item"
 on = "<C-CR>"
 run = "list.toggle_task"
 desc = "Toggle the task"
+
+# Tab and Shift+Tab: the next or previous cell in a table, the list item one
+# level in or out, and anywhere else the tab width (in the settings) of spaces.
+
+[[edit.keymap]]
+on = "<Tab>"
+run = "edit.tab"
+desc = "Next cell, indent the item or put in spaces"
+
+[[edit.keymap]]
+on = "<S-Tab>"
+run = "edit.untab"
+desc = "Previous cell, outdent the item or take spaces away"

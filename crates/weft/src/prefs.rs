@@ -1,8 +1,9 @@
 //! What the settings screen reads and writes (ito's `docs/common-spec.md`):
 //! common.toml (the language, the scale, the theme and the clock, shared by
-//! every uchmk app), the person's themes, weft's keymap.toml and the
-//! `[notify]` table of weft's config.toml (the Notifications page; the rest
-//! of config.toml stays a file). The files are watched every 2 s and written
+//! every uchmk app), the person's themes, weft's keymap.toml, and the
+//! `[editor]` (the Editing page) and `[notify]` (the Notifications page)
+//! tables of weft's config.toml (the rest of config.toml stays a file). The
+//! files are watched every 2 s and written
 //! on threads of their own; what was read comes back as a [`Reload`], which
 //! [`Prefs::pump`] folds in. The UI thread never touches the disk.
 //! (koyomi's prefs.rs, without the mail and the limits.)
@@ -45,6 +46,48 @@ pub struct Config {
     pub notify: NotifyCfg,
     pub open: ito_openin::Config,
     pub warnings: Vec<String>,
+    /// `[editor] tab_width`, and what the Editing page warns of.
+    pub tab_width: usize,
+    pub editor_warn: Vec<String>,
+}
+
+/// The tab widths the Editing page offers.
+pub const TAB_WIDTHS: [usize; 3] = [2, 4, 8];
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct EditorFile {
+    editor: EditorTable,
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(default)]
+struct EditorTable {
+    tab_width: Option<i64>,
+}
+
+/// `[editor] tab_width` of the config.toml `text` (none: no file), with what
+/// to warn of. A width the page does not offer is said, and the default
+/// stands in for it.
+pub fn read_editor(text: Option<&str>) -> (usize, Vec<String>) {
+    let default = crate::engine::TAB_WIDTH;
+    let mut warnings = Vec::new();
+    let width = match text.map(toml::from_str::<EditorFile>) {
+        Some(Ok(f)) => match f.editor.tab_width {
+            Some(n) if TAB_WIDTHS.iter().any(|&w| w as i64 == n) => n as usize,
+            Some(n) => {
+                warnings.push(format!("config.toml: [editor] tab_width = {n} is not 2, 4 or 8; {default} is used"));
+                default
+            }
+            None => default,
+        },
+        Some(Err(e)) => {
+            warnings.push(format!("config.toml: {}", e.message()));
+            default
+        }
+        None => default,
+    };
+    (width, warnings)
 }
 
 /// The config.toml at `path` (none: the defaults): `[notify]` as the page
@@ -66,7 +109,8 @@ fn read_config(path: &Path) -> Result<Box<Config>, String> {
             warnings.push(w);
         }
     }
-    Ok(Box::new(Config { notify, open, warnings }))
+    let (tab_width, editor_warn) = read_editor(text.as_deref());
+    Ok(Box::new(Config { notify, open, warnings, tab_width, editor_warn }))
 }
 
 /// One lock for every writer of config.toml from the window.
@@ -173,6 +217,10 @@ pub struct Prefs {
     pub open: ito_openin::Config,
     /// The Notifications page's fields while they are typed in.
     pub notify_drafts: ito_prefs::Drafts,
+    /// `[editor] tab_width` of config.toml: the spaces Tab puts in outside
+    /// tables and lists. What the Editing page warns of beside it.
+    pub tab_width: usize,
+    pub editor_warn: Vec<String>,
     tx: Sender<Reload>,
     rx: Receiver<Reload>,
     wake: Option<egui::Context>,
@@ -205,6 +253,8 @@ impl Prefs {
             notify_warn: Vec::new(),
             open: ito_openin::Config::default(),
             notify_drafts: ito_prefs::Drafts::new(),
+            tab_width: crate::engine::TAB_WIDTH,
+            editor_warn: Vec::new(),
             tx,
             rx,
             wake: None,
@@ -298,10 +348,17 @@ impl Prefs {
                     self.keymap = t;
                     self.keymap_new = Some(None);
                 }
-                Reload::Config(Ok(c)) => (self.notify, self.open, self.notify_warn) = (c.notify, c.open, c.warnings),
-                // Unreadable (being written, say): the page keeps what it
-                // had, and says so.
-                Reload::Config(Err(e)) => self.notify_warn = vec![e],
+                Reload::Config(Ok(c)) => {
+                    let c = *c;
+                    (self.notify, self.open, self.notify_warn) = (c.notify, c.open, c.warnings);
+                    (self.tab_width, self.editor_warn) = (c.tab_width, c.editor_warn);
+                }
+                // Unreadable (being written, say): the pages keep what they
+                // had, and say so.
+                Reload::Config(Err(e)) => {
+                    self.editor_warn = vec![e.clone()];
+                    self.notify_warn = vec![e];
+                }
                 Reload::Failed(e) => {
                     self.scale_wanted = None;
                     self.failed = Some(e);
@@ -412,6 +469,30 @@ impl Prefs {
                     Err(e) => Reload::Failed(e),
                 },
                 Err(e) => Reload::Failed(format!("{}: {e}", path.display())),
+            };
+            Self::send_back(&tx, &wake, r);
+        });
+    }
+
+    /// The Editing page's tab width at once, and into config.toml's
+    /// `[editor]` on a thread (the rest of the file stays as it is), then
+    /// the file read again.
+    pub fn tab_width_edit(&mut self, width: usize, no_folder: &str) {
+        if width == self.tab_width {
+            return;
+        }
+        self.tab_width = width;
+        let (tx, wake) = (self.tx.clone(), self.wake.clone());
+        let Some(base) = self.base.clone() else {
+            Self::send_back(&tx, &wake, Reload::Failed(no_folder.into()));
+            return;
+        };
+        std::thread::spawn(move || {
+            let _one = CONFIG_ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+            let path = config_path(&base);
+            let r = match write_config(&path, Some("editor"), &[("tab_width", width.to_string())], None) {
+                Ok(()) => Reload::Config(read_config(&path)),
+                Err(e) => Reload::Failed(e),
             };
             Self::send_back(&tx, &wake, r);
         });
@@ -565,6 +646,34 @@ mod tests {
         std::fs::write(&path, format!("{with_comment}[open]\neditor = \"hx {{path}}\"\n")).unwrap();
         let c = read_config(&path).unwrap();
         assert_eq!(c.open.open.editor, "hx {path}", "{:?}", c.warnings);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The Editing page's tab width lands in `[editor] tab_width` and is
+    /// read back; the file's other lines stay, and a width the page does not
+    /// offer is said and stands at 4. (3.9 checks the page itself.)
+    #[test]
+    fn the_tab_width_is_kept_in_the_editor_table() {
+        let dir = std::env::temp_dir().join(format!("weft-tabwidth-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = config_path(&dir);
+        assert_eq!(read_editor(None), (4, vec![]));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "# mine\n[notify]\nfocus_mode = false\n").unwrap();
+        for width in TAB_WIDTHS {
+            write_config(&path, Some("editor"), &[("tab_width", width.to_string())], None).unwrap();
+            let text = std::fs::read_to_string(&path).unwrap();
+            assert!(text.starts_with("# mine\n[notify]\nfocus_mode = false\n"), "{text}");
+            assert!(text.contains("[editor]") && text.contains(&format!("tab_width = {width}")), "{text}");
+            assert_eq!(read_editor(Some(&text)), (width, vec![]));
+            let c = read_config(&path).unwrap();
+            assert!(c.editor_warn.is_empty() && c.tab_width == width, "{:?}", c.editor_warn);
+        }
+        let (width, warnings) = read_editor(Some("[editor]\ntab_width = 3\n"));
+        assert_eq!(width, 4);
+        assert!(warnings.len() == 1 && warnings[0].contains("tab_width = 3"), "{warnings:?}");
+        let (width, warnings) = read_editor(Some("[editor]\ntab_width = \"wide\"\n"));
+        assert!(width == 4 && warnings.len() == 1, "{warnings:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
