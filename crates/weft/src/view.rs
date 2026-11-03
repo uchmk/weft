@@ -125,9 +125,11 @@ impl View {
     }
 
     /// Draw `ed` in what is left of `ui`. With `keys` the document has the
-    /// keys: the input method and the mouse go to it (typing, copy and paste
-    /// come in with the keys, in their order, before this).
-    pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, keys: bool, now_ms: u64) {
+    /// keys: the input method and the mouse go to it. Typing, copy and paste
+    /// and the input method's commits come in with the keys, in their order,
+    /// before this; here the composition is drawn and the candidate window
+    /// placed.
+    pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, keys: bool) {
         let rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(rect, Sense::click_and_drag());
         let c = ito_theme::colors();
@@ -141,19 +143,16 @@ impl View {
         }
         self.row_h = row_h;
 
-        // --- What was typed.
+        // --- The composition. Its commits went in with the keys (`f.commits`
+        // is not inserted again); a commit held for its echo is not drawn,
+        // the document has it.
         let mut preedit = String::new();
         if keys {
             let f = self.ime.frame(ui, self.caret_rect, ed.caret() as u64);
-            let mut changed = false;
-            for t in &f.commits {
-                changed |= ed.commit(t, now_ms);
-            }
             if f.composing {
                 preedit = f.preedit;
-                changed = true;
+                self.follow = true;
             }
-            self.follow |= changed;
         }
 
         let text = ed.text();
@@ -438,7 +437,7 @@ mod tests {
         let mut ed = Editor::new(&"line\n".repeat(6000));
         ed.go_to(5000, 1);
         let mut view = View::default();
-        let mut frame = |view: &mut View| ctx.run_ui(input(), |ui| view.show(ui, &mut ed, None, false, 0)).drop_without_applying_deltas();
+        let mut frame = |view: &mut View| ctx.run_ui(input(), |ui| view.show(ui, &mut ed, None, false)).drop_without_applying_deltas();
         frame(&mut view);
         assert!(shown(&view), "line 5000 at {} with the view at {}", 4999.0 * view.row_h, view.scroll.y);
         // Another face: egui's own proportional one, a little lower than its monospace.
