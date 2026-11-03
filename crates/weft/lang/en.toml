@@ -80,6 +80,25 @@ fixed = "weft reads {} itself: bound here, it never runs."
 "To the previous cell" = "To the previous cell"
 "Next cell, indent the item or the lines, or put in a tab" = "Next cell, indent the item or the lines, or put in a tab"
 "Previous cell, outdent the item or the lines, or take a tab away" = "Previous cell, outdent the item or the lines, or take a tab away"
+"Toggle bold" = "Toggle bold"
+"Toggle italic" = "Toggle italic"
+"Toggle inline code" = "Toggle inline code"
+"Toggle strikethrough" = "Toggle strikethrough"
+"Toggle a link" = "Toggle a link"
+"Toggle heading 1" = "Toggle heading 1"
+"Toggle heading 2" = "Toggle heading 2"
+"Toggle heading 3" = "Toggle heading 3"
+"Toggle heading 4" = "Toggle heading 4"
+"Toggle heading 5" = "Toggle heading 5"
+"Toggle heading 6" = "Toggle heading 6"
+"Turn the headings into paragraphs" = "Turn the headings into paragraphs"
+"Toggle the quote" = "Toggle the quote"
+"Toggle the code block" = "Toggle the code block"
+"Toggle the bulleted list" = "Toggle the bulleted list"
+"Toggle the numbered list" = "Toggle the numbered list"
+"Toggle the task list" = "Toggle the task list"
+"Check the selected tasks" = "Check the selected tasks"
+"Uncheck the selected tasks" = "Uncheck the selected tasks"
 
 [help]
 title = "Keys"
@@ -141,6 +160,8 @@ spoken = "{0}. {1} Enter: {2}, N: {3}, Esc: {4}"
 # Said to a screen reader when a command does not apply at the caret.
 [edit]
 nothing = "{0}: nothing to do here"
+# A format command put `**`, `*` or `~~` next to punctuation, where Markdown may not read it as emphasis.
+unflanked = "The marks are in, but next to punctuation they may not show as emphasis"
 
 [status]
 line_col = "Ln {0}, Col {1}"
@@ -153,6 +174,15 @@ utf8 = "UTF-8"
 not_utf8 = "Not UTF-8"
 # The input method is composing.
 composing = "Composing"
+# The input method: switched off, or on in one of its input modes (on in a
+# mode not listed: Chinese, Korean, an unknown one).
+ime_off = "IME off"
+ime_on = "IME on"
+ime_hiragana = "Hiragana"
+ime_full_katakana = "Full-width katakana"
+ime_half_katakana = "Half-width katakana"
+ime_full_alnum = "Full-width alphanumeric"
+ime_half_alnum = "Half-width alphanumeric"
 lf = "LF"
 crlf = "CRLF"
 mixed = "Mixed line endings"
