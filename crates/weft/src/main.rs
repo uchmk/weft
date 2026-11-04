@@ -15,6 +15,7 @@
 
 mod commands;
 mod count;
+mod door;
 mod engine;
 mod envreport;
 mod help;
@@ -221,6 +222,8 @@ struct App {
     /// The keyboard is a Mac's: Option types characters (`å`), so an Alt
     /// chord the keymap does not take types its character.
     mac: bool,
+    /// The door a second `weft FILE` knocks on (`None`: a window of its own).
+    door: Option<ito_ipc::single::Owner<ito_ipc::single::OpenRequest>>,
 }
 
 /// The warnings last put under the bell, file by file (common.toml, the
@@ -368,6 +371,7 @@ impl App {
             said: Vec::new(),
             quit: None,
             mac: cfg!(target_os = "macos"),
+            door: None,
         };
         // What the person's files got wrong goes under the bell, once.
         app.take_keymap();
@@ -426,6 +430,7 @@ impl App {
             said: Vec::new(),
             quit: None,
             mac: cfg!(target_os = "macos"),
+            door: None,
         }
     }
 
@@ -1408,6 +1413,7 @@ impl App {
         self.sync_common(&ctx);
         self.clicked();
         self.take_files(&ctx);
+        self.take_door(&ctx);
         self.quit_after_save(&ctx);
         // The window's close (the bar's ×, Alt+F4) asks first, as Ctrl+Q does.
         if ctx.input(|i| i.viewport().close_requested()) && self.quit != Some(Quit::Go) {
@@ -1628,6 +1634,18 @@ fn main() -> eframe::Result {
         }
         return Ok(());
     }
+    // With `open_from_outside = new_tab` one window serves every `weft FILE`:
+    // a later launch hands its file over and goes away. A script never does.
+    let ctx_cell = std::sync::Arc::new(std::sync::OnceLock::<egui::Context>::new());
+    let mut door = None;
+    if script.is_none() && prefs::tabs_now(ito_common::base_dir().as_deref()).open_from_outside == ito_tabs::OpenFromOutside::NewTab {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        match door::acquire(&door::request(file.as_deref(), goto, &cwd), ctx_cell.clone()) {
+            door::Door::Forwarded => return Ok(()),
+            door::Door::Owner(o) => door = Some(o),
+            door::Door::Closed => {}
+        }
+    }
     // A script plays on a window that keeps no place, and leaves none.
     let saved = if script.is_none() { Saved::load(ito_common::state_dir("weft")) } else { Saved::load(None) };
     let viewport = egui::ViewportBuilder::default()
@@ -1647,7 +1665,9 @@ fn main() -> eframe::Result {
                 r.watch(cc.egui_ctx.clone());
                 r
             });
+            let _ = ctx_cell.set(cc.egui_ctx.clone());
             let mut app = App::new(cc, &saved, script, file);
+            app.door = door;
             if let Some(g) = goto {
                 g.apply(&mut app);
             }
