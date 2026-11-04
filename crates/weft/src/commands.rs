@@ -1557,17 +1557,17 @@ mod tests {
         use crate::keymap::Cmd;
         let ctx = egui::Context::default();
         let mut app = crate::App::for_tests();
-        app.editor = Some(Editor::new("text\n\n# A\n\nbody\n"));
-        app.view.follow = false;
+        app.doc.editor = Some(Editor::new("text\n\n# A\n\nbody\n"));
+        app.doc.view.follow = false;
         app.run_key(&ctx, Cmd::Run("cursor.next_heading"));
-        assert_eq!(app.editor.as_ref().unwrap().caret(), "text\n\n".len());
-        assert!(app.view.follow, "the view goes to the caret");
+        assert_eq!(app.doc.editor.as_ref().unwrap().caret(), "text\n\n".len());
+        assert!(app.doc.view.follow, "the view goes to the caret");
         assert!(app.said.is_empty(), "{:?}", app.said);
 
-        app.editor.as_mut().unwrap().set_caret(1, false);
+        app.doc.editor.as_mut().unwrap().set_caret(1, false);
         app.run_key(&ctx, Cmd::Run("section.delete"));
         assert_eq!(app.said, ["Delete the section with its subsections: nothing to do here"]);
-        assert_eq!(app.editor.as_ref().unwrap().text(), "text\n\n# A\n\nbody\n");
+        assert_eq!(app.doc.editor.as_ref().unwrap().text(), "text\n\n# A\n\nbody\n");
         app.table = crate::i18n::table("ja").0;
         app.run_key(&ctx, Cmd::Run("cursor.prev_heading"));
         assert_eq!(app.said[1], "前の見出しへ: ここでは何もできません");

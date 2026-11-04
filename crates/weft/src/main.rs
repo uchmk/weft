@@ -127,6 +127,36 @@ fn file_thread(ctx: egui::Context) -> (Sender<FileJob>, Receiver<FileDone>) {
     (tx, rx)
 }
 
+/// One document and everything that belongs to it alone: the editor, how it
+/// is shown, its newest structure reading and the thread that makes it, the
+/// selection's count, and how many of its saves are on the file thread.
+struct Doc {
+    /// The editor, when a file is open.
+    editor: Option<engine::Editor>,
+    view: view::View,
+    /// The newest reading of the structure, and the thread that reads it.
+    tree: Option<structure::Tree>,
+    worker: structure::Worker,
+    /// The selection's character count for the status bar, kept between frames.
+    selected: count::Selected,
+    saving: usize,
+}
+
+impl Doc {
+    /// A document with nothing open; `wake` is asked for a repaint when the
+    /// worker has a reading.
+    fn new(wake: impl Fn() + Send + 'static) -> Self {
+        Self {
+            editor: None,
+            view: view::View::default(),
+            tree: None,
+            worker: structure::Worker::new(wake),
+            selected: count::Selected::default(),
+            saving: 0,
+        }
+    }
+}
+
 struct App {
     table: ito_i18n::Table,
     /// common.toml, the themes, keymap.toml and config.toml's `[notify]`,
@@ -139,18 +169,11 @@ struct App {
     lang: String,
     /// The last thing done that the status bar tells of (a save, a scale change).
     note: Option<String>,
-    /// The document, when one is open (`weft FILE`).
-    editor: Option<engine::Editor>,
-    view: view::View,
-    /// The newest reading of the structure, and the thread that reads it.
-    tree: Option<structure::Tree>,
-    worker: structure::Worker,
-    /// The selection's character count for the status bar, kept between frames.
-    selected: count::Selected,
-    /// The file thread's way in and out, and how many saves are on it.
+    /// The document in front (`weft FILE`) and what goes with it.
+    doc: Doc,
+    /// The file thread's way in and out.
     files: Sender<FileJob>,
     done: Receiver<FileDone>,
-    saving: usize,
     /// When the window opened: typing's clock (keys close together are one undo step).
     started: std::time::Instant,
     /// What the bell lists, oldest first. `go` is the file a notice is
@@ -287,14 +310,9 @@ impl App {
             tracker: saved.tracker(),
             lang,
             note: None,
-            editor: None,
-            view: view::View::default(),
-            tree: None,
-            worker: structure::Worker::new(move || wake.request_repaint()),
-            selected: count::Selected::default(),
+            doc: Doc::new(move || wake.request_repaint()),
             files,
             done,
-            saving: 0,
             started: std::time::Instant::now(),
             notices: Vec::new(),
             next_notice: 0,
@@ -335,10 +353,10 @@ impl App {
                     let title = self.table.trf("file.locked", &[&name]);
                     self.outcome(ito_notices::Kind::Warn, title, Some(path.to_path_buf()));
                 }
-                self.editor = Some(ed);
-                self.tree = None;
-                self.selected = count::Selected::default();
-                self.view = view::View::default();
+                self.doc.editor = Some(ed);
+                self.doc.tree = None;
+                self.doc.selected = count::Selected::default();
+                self.doc.view = view::View::default();
             }
             Err(e) => {
                 let title = self.table.trf("file.open_failed", &[&name, &e]);
@@ -361,14 +379,9 @@ impl App {
             tracker: None,
             lang: "en".to_owned(),
             note: None,
-            editor: None,
-            view: view::View::default(),
-            tree: None,
-            worker: structure::Worker::new(|| {}),
-            selected: count::Selected::default(),
+            doc: Doc::new(|| {}),
             files,
             done,
-            saving: 0,
             started: std::time::Instant::now(),
             notices: Vec::new(),
             next_notice: 0,
@@ -392,12 +405,17 @@ impl App {
     /// settings, the help, the palette, the list under the bell, the
     /// question before quitting).
     fn editing(&self) -> bool {
-        self.editor.is_some() && !self.settings_open && !self.help.open && self.palette.is_none() && !self.bell_open && self.quit.is_none()
+        self.doc.editor.is_some()
+            && !self.settings_open
+            && !self.help.open
+            && self.palette.is_none()
+            && !self.bell_open
+            && self.quit.is_none()
     }
 
     /// The document has changes not yet saved.
     fn dirty(&self) -> bool {
-        self.editor.as_ref().is_some_and(engine::Editor::is_dirty)
+        self.doc.editor.as_ref().is_some_and(engine::Editor::is_dirty)
     }
 
     /// Ctrl+Q or the window's close: straight away when nothing would be
@@ -460,7 +478,7 @@ impl App {
     /// stays when the document is still not saved (the failure is under the
     /// bell; a document with no file is told of there too).
     fn quit_after_save(&mut self, ctx: &egui::Context) {
-        if self.quit != Some(Quit::Saving) || self.saving > 0 {
+        if self.quit != Some(Quit::Saving) || self.doc.saving > 0 {
             return;
         }
         if self.dirty() {
@@ -473,7 +491,8 @@ impl App {
 
     /// The open document's file name (none: empty).
     fn file_name(&self) -> String {
-        self.editor
+        self.doc
+            .editor
             .as_ref()
             .and_then(engine::Editor::path)
             .and_then(Path::file_name)
@@ -610,9 +629,9 @@ impl App {
     /// its own.
     fn commit(&mut self, t: &str) {
         let now = self.now_ms();
-        let Some(ed) = &mut self.editor else { return };
+        let Some(ed) = &mut self.doc.editor else { return };
         if ed.commit(t, now) {
-            self.view.follow = true;
+            self.doc.view.follow = true;
         }
     }
 
@@ -620,10 +639,10 @@ impl App {
     /// and Tab are keys.
     fn type_text(&mut self, t: &str) {
         let now = self.now_ms();
-        let Some(ed) = &mut self.editor else { return };
+        let Some(ed) = &mut self.doc.editor else { return };
         let t: String = t.chars().filter(|c| !c.is_control()).collect();
         if ed.insert(&t, now) {
-            self.view.follow = true;
+            self.doc.view.follow = true;
         }
     }
 
@@ -634,7 +653,7 @@ impl App {
             return;
         }
         let now = self.now_ms();
-        let Some(ed) = &mut self.editor else { return };
+        let Some(ed) = &mut self.doc.editor else { return };
         let changed = match e {
             egui::Event::Copy => {
                 if let Some(s) = ed.selected_text() {
@@ -652,7 +671,7 @@ impl App {
             egui::Event::Paste(t) => ed.paste(t, now),
             _ => false,
         };
-        self.view.follow |= changed;
+        self.doc.view.follow |= changed;
     }
 
     /// What a bound key (or the palette) runs. The document's commands run
@@ -666,9 +685,9 @@ impl App {
             "file.save" => self.save(),
             "file.open_in_editor" => self.open_in_editor(),
             _ if self.editing() => {
-                let (now, page) = (self.now_ms(), self.view.page());
+                let (now, page) = (self.now_ms(), self.doc.view.page());
                 let (tab, tab_char) = (self.prefs.tab_width, self.prefs.tab_char);
-                let Some(ed) = &mut self.editor else { return };
+                let Some(ed) = &mut self.doc.editor else { return };
                 // The settings' tab width and tab character, for Tab outside
                 // tables and lists.
                 ed.set_tab_width(tab);
@@ -676,7 +695,7 @@ impl App {
                 let done = commands::edit(ed, name, now, page);
                 let unflanked = ed.take_unflanked();
                 if done.is_some() {
-                    self.view.follow = true;
+                    self.doc.view.follow = true;
                 }
                 if done == Some(false) {
                     self.nothing_here(name);
@@ -720,13 +739,13 @@ impl App {
 
     /// Ctrl+S: what the document is now goes to the file thread.
     fn save(&mut self) {
-        let Some(ed) = &self.editor else { return };
+        let Some(ed) = &self.doc.editor else { return };
         let path = ed.path().map(Path::to_path_buf);
         let name = path.as_deref().map(|p| p.display().to_string()).unwrap_or_default();
         match ed.save_job() {
             Ok(job) => {
                 if self.send_file(FileJob::Save(job)) {
-                    self.saving += 1;
+                    self.doc.saving += 1;
                 }
             }
             Err(engine::NoSave::NoPath) => {
@@ -743,7 +762,7 @@ impl App {
     /// Ctrl+E: `$EDITOR` at the caret's line and column, after a save when
     /// the window has changes (docs/design.md).
     fn open_in_editor(&mut self) {
-        let Some(ed) = &self.editor else { return };
+        let Some(ed) = &self.doc.editor else { return };
         let Some(path) = ed.path().map(Path::to_path_buf) else {
             let title = self.table.tr("file.no_path").to_owned();
             self.outcome(ito_notices::Kind::Warn, title, None);
@@ -755,7 +774,7 @@ impl App {
             if !self.send_file(FileJob::Save(job)) {
                 return;
             }
-            self.saving += 1;
+            self.doc.saving += 1;
         }
         let cfg = Box::new(self.prefs.open.clone());
         self.send_file(FileJob::Open { cfg, path, at });
@@ -771,11 +790,11 @@ impl App {
         while let Ok(d) = self.done.try_recv() {
             match d {
                 FileDone::Saved { version, path, result } => {
-                    self.saving = self.saving.saturating_sub(1);
+                    self.doc.saving = self.doc.saving.saturating_sub(1);
                     let name = path.display().to_string();
                     match result {
                         Ok(()) => {
-                            if let Some(ed) = self.editor.as_mut().filter(|ed| ed.path() == Some(path.as_path())) {
+                            if let Some(ed) = self.doc.editor.as_mut().filter(|ed| ed.path() == Some(path.as_path())) {
                                 ed.saved(version);
                             }
                             let short = path.file_name().map_or(name.clone(), |n| n.to_string_lossy().into_owned());
@@ -804,11 +823,11 @@ impl App {
     /// The structure worker: ask for a reading of the text as it is, keep
     /// the newest that came back.
     fn take_tree(&mut self) {
-        let Some(ed) = &self.editor else { return };
-        self.worker.ask(ed.version(), ed.text());
-        if let Some(t) = self.worker.take() {
-            if self.tree.as_ref().is_none_or(|old| old.version <= t.version) {
-                self.tree = Some(t);
+        let Some(ed) = &self.doc.editor else { return };
+        self.doc.worker.ask(ed.version(), ed.text());
+        if let Some(t) = self.doc.worker.take() {
+            if self.doc.tree.as_ref().is_none_or(|old| old.version <= t.version) {
+                self.doc.tree = Some(t);
             }
         }
     }
@@ -840,7 +859,7 @@ impl App {
             Some(Quit::Go) => "go",
         };
         out.push_str(&format!("quit: {quit}\n"));
-        if let Some(ed) = &self.editor {
+        if let Some(ed) = &self.doc.editor {
             let (line, col) = ed.line_col();
             let file = ed.path().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             let section = self.section().unwrap_or_default();
@@ -872,7 +891,7 @@ impl App {
 
     /// The title of the section the caret is in, by the newest reading.
     fn section(&self) -> Option<String> {
-        let (ed, tree) = (self.editor.as_ref()?, self.tree.as_ref()?);
+        let (ed, tree) = (self.doc.editor.as_ref()?, self.doc.tree.as_ref()?);
         let i = ito_outline::at_byte(&tree.headings, ed.caret())?;
         Some(tree.headings[i].title.clone())
     }
@@ -1049,7 +1068,7 @@ impl App {
     /// The bottom bar ([`App::status_items`]), the clock from common.toml at
     /// the right end.
     fn status_bar(&mut self, ui: &mut egui::Ui) {
-        let composing = self.editing() && self.view.composing(ui.ctx());
+        let composing = self.editing() && self.doc.view.composing(ui.ctx());
         self.read_ime(ui.ctx());
         let (left, right) = self.status_items(composing);
         let clock = self.prefs.common.clock_or(None);
@@ -1074,7 +1093,7 @@ impl App {
     /// The input method's state for the status bar, read each frame (see
     /// [`App::ime`]).
     fn read_ime(&mut self, ctx: &egui::Context) {
-        self.ime = self.view.ime_status(ctx);
+        self.ime = self.doc.view.ime_status(ctx);
     }
 
     /// What the status bar says, left and right, each in reading order. On
@@ -1094,21 +1113,21 @@ impl App {
         let c = ito_theme::colors();
         let mut left = StatusItems::new();
         let mut right = StatusItems::new();
-        if let Some(ed) = &self.editor {
+        if let Some(ed) = &self.doc.editor {
             let t = &self.table;
             let (line, col) = ed.line_col();
             left.push((t.trf("status.line_col", &[&(line + 1).to_string(), &(col + 1).to_string()]), c.fg));
             let counted = ed.locked() != Some(engine::Locked::NotUtf8);
             let sel = ed.selection();
             if counted && !sel.is_empty() {
-                let reading = self.tree.as_ref().filter(|tree| tree.version == ed.version()).map(|tree| &tree.counts);
-                let n = match self.selected.count(ed.version(), ed.text(), sel.range(), reading) {
+                let reading = self.doc.tree.as_ref().filter(|tree| tree.version == ed.version()).map(|tree| &tree.counts);
+                let n = match self.doc.selected.count(ed.version(), ed.text(), sel.range(), reading) {
                     Some(n) => ito_common::text::grouped(n as u64),
                     None => t.tr("status.pending").to_owned(),
                 };
                 left.push((t.trf("status.selected", &[&n]), c.fg));
             }
-            if let Some(tree) = self.tree.as_ref().filter(|_| counted) {
+            if let Some(tree) = self.doc.tree.as_ref().filter(|_| counted) {
                 left.push((t.trf("status.chars", &[&ito_common::text::grouped(tree.chars as u64)]), c.dim));
             }
             if let Some(s) = self.section() {
@@ -1119,7 +1138,7 @@ impl App {
             } else if ed.is_dirty() {
                 left.push((t.tr("status.unsaved").to_owned(), c.wait));
             }
-            if self.saving > 0 {
+            if self.doc.saving > 0 {
                 left.push((t.tr("status.saving").to_owned(), c.dim));
             }
             if composing {
@@ -1285,7 +1304,7 @@ impl App {
         self.bell_open = false;
         let Some(n) = self.notices.iter_mut().find(|n| n.id == id) else { return };
         n.read = true;
-        let open = self.editor.as_ref().and_then(engine::Editor::path);
+        let open = self.doc.editor.as_ref().and_then(engine::Editor::path);
         if n.go.is_some() && n.go.as_deref() == open {
             self.settings_open = false;
             self.help.close();
@@ -1431,16 +1450,16 @@ impl App {
             }
             if self.editing() {
                 // While the input method composes, its keys (Enter, the arrows) are its own.
-                self.view.swallow(&ctx);
+                self.doc.view.swallow(&ctx);
             }
             self.read_keys(&ctx);
             // A key may have opened the help or the settings.
             let editing = self.editing();
-            if let Some(ed) = &mut self.editor {
+            if let Some(ed) = &mut self.doc.editor {
                 if !editing {
                     ed.seal();
                 }
-                self.view.show(ui, ed, self.tree.as_ref(), editing);
+                self.doc.view.show(ui, ed, self.doc.tree.as_ref(), editing);
             } else {
                 // No file: the ghost stands where the document would be.
                 let look = ito_prefs::Look { c: ito_theme::colors(), q: "" };
@@ -1529,9 +1548,9 @@ impl Goto {
     /// Put the caret of the document just opened there; the first frame
     /// scrolls to it. Without a document, nothing.
     fn apply(self, app: &mut App) {
-        if let Some(ed) = &mut app.editor {
+        if let Some(ed) = &mut app.doc.editor {
             ed.go_to(self.line, self.col);
-            app.view.follow = true;
+            app.doc.view.follow = true;
         }
     }
 }
@@ -1660,7 +1679,7 @@ mod tests {
             app.open(&path.unwrap());
             goto.unwrap().apply(&mut app);
             assert!(app.report().contains("caret: 3:5\n"), "{}", app.report());
-            assert!(app.view.follow, "the first frame scrolls to it");
+            assert!(app.doc.view.follow, "the first frame scrolls to it");
         }
         let all = strings(&["+40", &name]);
         let (path, goto, _) = file_arg(&all).unwrap();
@@ -1714,8 +1733,8 @@ mod tests {
         let mut app = App::for_tests();
         let mut ed = engine::Editor::new("# One\n\na\n\n## Two\n\nb");
         ed.set_caret(ed.text().len(), false);
-        app.tree = Some(structure::read(ed.version(), ed.text()));
-        app.editor = Some(ed);
+        app.doc.tree = Some(structure::read(ed.version(), ed.text()));
+        app.doc.editor = Some(ed);
         assert_eq!(app.section().as_deref(), Some("Two"));
     }
 
@@ -1728,22 +1747,22 @@ mod tests {
         let words = |items: &StatusItems| items.iter().map(|(s, _)| s.clone()).collect::<Vec<_>>();
         let text = "# 見出し\r\n\r\n👍🏽 e\u{301}\r\n";
         let mut app = App::for_tests();
-        app.editor = Some(engine::Editor::new(text));
+        app.doc.editor = Some(engine::Editor::new(text));
         let (left, right) = app.status_items(false);
         assert_eq!(words(&left), ["Ln 1, Col 1"], "no reading yet, so no count");
         assert_eq!(words(&right), ["UTF-8", "CRLF"]);
 
-        let ed = app.editor.as_ref().unwrap();
-        app.tree = Some(structure::read(ed.version(), ed.text()));
+        let ed = app.doc.editor.as_ref().unwrap();
+        app.doc.tree = Some(structure::read(ed.version(), ed.text()));
         let (left, right) = app.status_items(true);
         assert_eq!(words(&left), ["Ln 1, Col 1", "Chars 8", "見出し"]);
         assert_eq!(words(&right), ["Composing", "UTF-8", "CRLF"]);
 
-        let ed = app.editor.as_mut().unwrap();
+        let ed = app.doc.editor.as_mut().unwrap();
         ed.set_caret(text.find('e').unwrap(), true);
         let (left, _) = app.status_items(false);
         assert!(words(&left).contains(&"Selected 7".to_owned()), "{left:?}");
-        let ed = app.editor.as_mut().unwrap();
+        let ed = app.doc.editor.as_mut().unwrap();
         ed.set_caret(0, false);
         ed.set_caret(text.len(), true);
         let (left, _) = app.status_items(false);
@@ -1751,7 +1770,7 @@ mod tests {
         assert!(app.report().contains("chars: 8\nselected_chars: 8\n"), "{}", app.report());
 
         // A typed key: the bar keeps the old reading's count until a new one comes.
-        let ed = app.editor.as_mut().unwrap();
+        let ed = app.doc.editor.as_mut().unwrap();
         ed.set_caret(0, false);
         ed.insert("ab", 0);
         let (left, _) = app.status_items(false);
@@ -1785,7 +1804,7 @@ mod tests {
         app.read_ime(&ctx);
         assert!(app.status_items(false).1.is_empty(), "no document, no item");
 
-        app.editor = Some(engine::Editor::new("a\n"));
+        app.doc.editor = Some(engine::Editor::new("a\n"));
         let on = |open, mode| Some(Status { open, mode });
         for (status, want) in [
             (on(false, Mode::HalfAlnum), "IME off"),
@@ -1841,10 +1860,10 @@ mod tests {
         std::fs::write(&file, b"\x82\xa0\x82\xa2\n# \x8c\xa9\x8f\x6f\x82\xb5\n").unwrap();
         let mut app = App::for_tests();
         app.open(&file);
-        let ed = app.editor.as_mut().unwrap();
+        let ed = app.doc.editor.as_mut().unwrap();
         assert_eq!(ed.locked(), Some(engine::Locked::NotUtf8));
         ed.select_all();
-        app.tree = Some(structure::read(ed.version(), ed.text()));
+        app.doc.tree = Some(structure::read(ed.version(), ed.text()));
         let (left, right) = app.status_items(false);
         let left = words(&left);
         assert!(!left.iter().any(|s| s.starts_with("Chars") || s.starts_with("Selected")), "{left:?}");
@@ -1868,26 +1887,26 @@ mod tests {
         let text = line.repeat((256 << 10) / line.len() + 1);
         // A reading of the text as it is now, as the worker makes it (with no headings or colours).
         let reading = |app: &App| {
-            let ed = app.editor.as_ref().unwrap();
+            let ed = app.doc.editor.as_ref().unwrap();
             let counts = count::Index::new(ed.text());
             let (version, chars) = (ed.version(), counts.total());
             structure::Tree { version, headings: Vec::new(), lines: Vec::new(), breaks: Vec::new(), chars, counts }
         };
         let near = 2 * (count::STEP + 64);
         let mut app = App::for_tests();
-        app.editor = Some(engine::Editor::new(&text));
-        app.editor.as_mut().unwrap().select_all();
+        app.doc.editor = Some(engine::Editor::new(&text));
+        app.doc.editor.as_mut().unwrap().select_all();
         let ((left, _), walk) = count::walked(|| app.status_items(false));
         assert!(words(&left).contains(&"Selected …".to_owned()), "Ctrl+A before the reading: {left:?}");
         assert_eq!(walk, 0);
 
-        app.tree = Some(reading(&app));
+        app.doc.tree = Some(reading(&app));
         let ((left, _), walk) = count::walked(|| app.status_items(false));
         let all = count::count(&text, 0..text.len());
         assert!(words(&left).contains(&format!("Selected {}", ito_common::text::grouped(all as u64))), "the reading came: {left:?}");
         assert!(walk <= near, "walked {walk} bytes");
 
-        let ed = app.editor.as_mut().unwrap();
+        let ed = app.doc.editor.as_mut().unwrap();
         ed.set_caret(line.len() + 2, false);
         ed.move_caret(engine::Motion::DocEnd, true);
         let ((left, _), walk) = count::walked(|| app.status_items(false));
@@ -1896,15 +1915,15 @@ mod tests {
         assert!(walk <= near, "walked {walk} bytes");
 
         // Typed over, then undone: the selection is back, the reading behind.
-        let ed = app.editor.as_mut().unwrap();
+        let ed = app.doc.editor.as_mut().unwrap();
         assert!(ed.insert("x", 0));
         assert!(ed.undo());
         assert_eq!(ed.selection().range(), line.len() + 2..text.len());
-        assert_ne!(Some(ed.version()), app.tree.as_ref().map(|t| t.version));
+        assert_ne!(Some(ed.version()), app.doc.tree.as_ref().map(|t| t.version));
         let ((left, _), walk) = count::walked(|| app.status_items(false));
         assert!(words(&left).contains(&"Selected …".to_owned()), "an edit with the selection kept: {left:?}");
         assert_eq!(walk, 0);
-        app.tree = Some(reading(&app));
+        app.doc.tree = Some(reading(&app));
         let (left, _) = app.status_items(false);
         assert!(words(&left).contains(&format!("Selected {}", ito_common::text::grouped(n as u64))), "{left:?}");
     }
@@ -1922,16 +1941,16 @@ mod tests {
         let mut app = App::for_tests();
         let mut ed = engine::Editor::new("a");
         ed.insert("b", 0);
-        app.editor = Some(ed);
+        app.doc.editor = Some(ed);
         app.quit(&ctx);
         app.answer_quit(&ctx, 1);
         assert_eq!(app.quit, Some(Quit::Go), "N quits as it is");
-        assert_eq!(app.saving, 0, "and writes nothing");
+        assert_eq!(app.doc.saving, 0, "and writes nothing");
 
         let mut app = App::for_tests();
         let mut ed = engine::Editor::new("a");
         ed.insert("b", 0);
-        app.editor = Some(ed);
+        app.doc.editor = Some(ed);
         app.quit(&ctx);
         assert_eq!(app.quit, Some(Quit::Asking));
         assert!(!app.editing(), "the question has the keys");
@@ -1951,12 +1970,12 @@ mod tests {
         std::fs::write(&file, "a").unwrap();
         let mut app = App::for_tests();
         app.open(&file);
-        app.editor.as_mut().unwrap().insert("b", 0);
+        app.doc.editor.as_mut().unwrap().insert("b", 0);
         app.quit(&ctx);
         app.answer_quit(&ctx, 2);
         assert_eq!(app.quit, Some(Quit::Saving));
         let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while app.saving > 0 && std::time::Instant::now() < until {
+        while app.doc.saving > 0 && std::time::Instant::now() < until {
             std::thread::sleep(std::time::Duration::from_millis(10));
             app.take_files(&ctx);
         }
@@ -2049,7 +2068,7 @@ mod tests {
     fn the_screen_reader_hears_saves_nothing_to_do_and_the_quit_question() {
         let ctx = egui::Context::default();
         let mut app = App::for_tests();
-        app.editor = Some(engine::Editor::new("a"));
+        app.doc.editor = Some(engine::Editor::new("a"));
         app.run_key(&ctx, keymap::Cmd::Run("edit.undo"));
         assert_eq!(app.said, ["Undo: nothing to do here"]);
         app.run_key(&ctx, keymap::Cmd::Run("cursor.left"));
@@ -2060,7 +2079,7 @@ mod tests {
         assert_eq!(app.notices.len(), 1, "and it is under the bell");
 
         app.said.clear();
-        app.editor.as_mut().unwrap().insert("b", 0);
+        app.doc.editor.as_mut().unwrap().insert("b", 0);
         app.quit(&ctx);
         app.quit(&ctx);
         assert_eq!(app.said.len(), 1, "asked twice (the window's close), said once");
@@ -2073,10 +2092,10 @@ mod tests {
         std::fs::write(&file, "a").unwrap();
         let mut app = App::for_tests();
         app.open(&file);
-        app.editor.as_mut().unwrap().insert("b", 0);
+        app.doc.editor.as_mut().unwrap().insert("b", 0);
         app.save();
         let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while app.saving > 0 && std::time::Instant::now() < until {
+        while app.doc.saving > 0 && std::time::Instant::now() < until {
             std::thread::sleep(std::time::Duration::from_millis(10));
             app.take_files(&ctx);
         }
@@ -2095,9 +2114,9 @@ mod tests {
         let mut ed = engine::Editor::new("「強調」です");
         ed.set_caret(0, false);
         ed.set_caret("「強調」".len(), true);
-        app.editor = Some(ed);
+        app.doc.editor = Some(ed);
         app.run_key(&ctx, keymap::Cmd::Run("inline.bold"));
-        assert_eq!(app.editor.as_ref().unwrap().text(), "**「強調」**です");
+        assert_eq!(app.doc.editor.as_ref().unwrap().text(), "**「強調」**です");
         let line = "The marks are in, but next to punctuation they may not show as emphasis";
         assert_eq!(app.note.as_deref(), Some(line));
         assert_eq!(app.said, [line]);
@@ -2106,7 +2125,7 @@ mod tests {
 
         app.note = None;
         app.run_key(&ctx, keymap::Cmd::Run("inline.bold"));
-        assert_eq!(app.editor.as_ref().unwrap().text(), "「強調」です");
+        assert_eq!(app.doc.editor.as_ref().unwrap().text(), "「強調」です");
         assert_eq!(app.note, None);
         assert_eq!(app.said.len(), 1);
     }
@@ -2156,7 +2175,7 @@ mod tests {
         let mut ed = engine::Editor::new(text);
         ed.set_caret(from, false);
         ed.set_caret(to, true);
-        app.editor = Some(ed);
+        app.doc.editor = Some(ed);
         (app, egui::Context::default())
     }
 
@@ -2174,7 +2193,7 @@ mod tests {
     }
 
     fn text_of(app: &App) -> &str {
-        app.editor.as_ref().unwrap().text()
+        app.doc.editor.as_ref().unwrap().text()
     }
 
     /// What `name` makes of `text` with `from..to` selected, run by name as
@@ -2313,7 +2332,7 @@ mod tests {
         events.extend(stroke(K::C, M::NONE, Some("c")));
         frame_with(&mut app, &ctx, events);
         assert_eq!(text_of(&app), "- [ ] bca");
-        let ed = app.editor.as_mut().unwrap();
+        let ed = app.doc.editor.as_mut().unwrap();
         assert!(ed.undo());
         assert_eq!(ed.text(), "- [ ] ba");
         assert!(ed.undo());
@@ -2378,7 +2397,7 @@ mod tests {
         app.open(&file);
         let ctx = egui::Context::default();
         let was = text_of(&app).to_owned();
-        let ed = app.editor.as_mut().unwrap();
+        let ed = app.doc.editor.as_mut().unwrap();
         ed.set_caret(0, false);
         ed.set_caret(was.len(), true);
         let mut events = stroke(K::A, M::NONE, Some("a"));
@@ -2403,12 +2422,12 @@ mod tests {
         let (mut app, ctx) = typing_into("", 0, 0);
         frame_with(&mut app, &ctx, vec![ime_preedit("한")]);
         assert_eq!(text_of(&app), "", "a composition is not typed");
-        assert!(app.view.composing(&ctx), "the composition is shown");
+        assert!(app.doc.view.composing(&ctx), "the composition is shown");
         let mut events = vec![ime_preedit(""), ime_commit("한")];
         events.extend(stroke(K::Space, M::NONE, Some(" ")));
         frame_with(&mut app, &ctx, events);
         assert_eq!(text_of(&app), "한 ");
-        assert!(!app.view.composing(&ctx));
+        assert!(!app.doc.view.composing(&ctx));
         // The frames after it do not put the commit in again.
         frame_with(&mut app, &ctx, Vec::new());
         frame_with(&mut app, &ctx, Vec::new());
@@ -2425,7 +2444,7 @@ mod tests {
         events.extend([ime_preedit(""), ime_commit("日本")]);
         frame_with(&mut app, &ctx, events);
         assert_eq!(text_of(&app), "a日本");
-        let ed = app.editor.as_mut().unwrap();
+        let ed = app.doc.editor.as_mut().unwrap();
         assert!(ed.undo());
         assert_eq!(ed.text(), "a", "the commit is an undo step of its own");
     }
@@ -2490,12 +2509,12 @@ mod tests {
             let mut want = engine::Editor::new(DOC);
             want.set_caret(at, false);
             for f in first {
-                assert_eq!(commands::edit(app.editor.as_mut().unwrap(), f, 0, 20), Some(true));
+                assert_eq!(commands::edit(app.doc.editor.as_mut().unwrap(), f, 0, 20), Some(true));
                 assert_eq!(commands::edit(&mut want, f, 0, 20), Some(true));
             }
             assert_eq!(commands::edit(&mut want, name, 0, 20), Some(true), "{name} has something to do");
             frame_with(&mut app, &ctx, stroke(k, mods, Some(typed)));
-            let ed = app.editor.as_ref().unwrap();
+            let ed = app.doc.editor.as_ref().unwrap();
             assert_eq!(ed.text(), DOC, "{words} types no {typed:?}");
             assert_eq!(ed.selection(), want.selection(), "{words} runs {name}");
             shown_and_bound_once(&app, name, words, k, mods);
@@ -2515,11 +2534,11 @@ mod tests {
             let mut app = App::for_tests();
             let mut ed = engine::Editor::new(&text);
             ed.set_caret(11, false);
-            app.editor = Some(ed);
+            app.doc.editor = Some(ed);
             app.run_key(&ctx, keymap::Cmd::Run("heading.delete"));
             assert_eq!(text_of(&app), "# P\n\nbody\n\nq\n", "{line}");
             assert!(app.said.is_empty(), "{line}: {:?}", app.said);
-            let ed = app.editor.as_mut().unwrap();
+            let ed = app.doc.editor.as_mut().unwrap();
             assert!(ed.undo());
             assert_eq!(ed.text(), text, "{line}: one undo");
         }
