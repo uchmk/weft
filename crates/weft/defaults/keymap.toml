@@ -250,6 +250,20 @@ on = "<A-u>"
 run = "cursor.parent_heading"
 desc = "To the parent heading"
 
+# Tab and Shift+Tab: every line of a selection over several lines one level in
+# or out; else the next or previous cell in a table, the list item one level
+# in or out, and anywhere else a tab or the tab width of spaces (the settings).
+
+[[edit.keymap]]
+on = "<Tab>"
+run = "edit.tab"
+desc = "Next cell, indent the item or the lines, or put in a tab"
+
+[[edit.keymap]]
+on = "<S-Tab>"
+run = "edit.untab"
+desc = "Previous cell, outdent the item or the lines, or take a tab away"
+
 # --- Formatting ---
 #
 # A shifted symbol is written as the symbol it types: `<C-{>` is Ctrl+Shift+[.

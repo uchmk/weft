@@ -73,7 +73,7 @@
 - [x] `block.move_up` / `block.move_down`（リストの項目は `move_item` で子の項目ごと 1 つ、それ以外は `move_block`。`Alt+↑` / `Alt+↓`）、節の移動（`move_section`、`Alt+Shift+↑` / `Alt+Shift+↓`）。
 - [x] `section.promote` / `section.demote`（`promote_section` / `demote_section`。子孫の見出しごと。`Alt+Shift+←` / `Alt+Shift+→`）。
 - [x] リストの階層（`indent_item` / `outdent_item`、`Alt+→` / `Alt+←`）、`list.toggle_task`（`toggle_task`、`Ctrl+Enter`）、番号の振り直し（`renumber`、パレットから）。
-- [ ] `table.format`（`format_table`。全角は 2 セル幅）、`table.next_cell`（`next_cell`、Tab / Shift+Tab）。
+- [x] `table.format`（`format_table`。全角は 2 セル幅）、`table.next_cell`（`next_cell`、Tab / Shift+Tab）。
   コマンドとパレットには入れた。Tab / Shift+Tab の割り当てが残っている。決めたこと（2026-11-03）: 表の中はセルの移動、リストの項目では字下げ・戻し（`indent_item` / `outdent_item`）、
   それ以外では Tab が空白を入れ、Shift+Tab が行頭の空白を戻す。空白の数は設定で選べる（既定は 4）。
   枝 `wt/tab` で作り、別のエージェントが確かめた（verify 58 件が通る。設定の画面・IME の変換中・元に戻す・読み取り専用も確かめた）。
@@ -98,6 +98,10 @@
   入ったら ito を上げ、`main`（0.2.8 と `wt/keys`）を取り込んで、8.16・8.17 の行の番号を `wt/keys` の行とぶつからないように振り直す。
   #182・#183 は ito の v0.240.0（f1f3b75）で入り、0.2.9 で main の ito を v0.242.0（78ba28d）に上げた。次は `wt/tab` に main を取り込んで確かめ直す
   （8.16 は 2 回目の Tab が何もしなくなる。行の番号は `wt/keys` の 8.20〜8.23 とぶつかる）。
+  2026-11-05: `wt/tab` を `main` に取り込んだ（ito は v0.242.0 のまま。Tab / Shift+Tab は `edit.tab` / `edit.untab`）。
+  TESTING の行は 8.24〜8.30 に振り直した（旧 8.16・8.17・8.20〜8.24。テストの `/// 8.NN:` も同じ）。
+  ito の `shift_lines` は、Shift+Tab で戻せない Tab（段落の下で項目がコードになる 2 回目の Tab など）を何もしない（`None`）ことにした。
+  それに合わせて、2 回目の Tab を期待していたテスト 3 つ（8.24・8.29）と TESTING 8.24 の言葉を直した。
 - [ ] 見出しの折りたたみ（`heading.fold`）、目次の挿入・更新（`heading.insert_toc`）。
   折りたたみは `ito-outline` の `section` を使う weft の表示。目次の挿入・更新は uchmk/ito#163 で頼み、v0.230.0（3ce9f13）の ito-mdedit `insert_toc` で入った。
   0.2.8 で目次の挿入・更新が入った（パレットから。1 回の元に戻すで戻る、最新なら何もしない。TESTING 11.1）。残りは折りたたみ。

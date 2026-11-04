@@ -1,9 +1,10 @@
 //! The settings screen (Ctrl+,): `ito-prefs` draws the nav and the cards, and
 //! the rows common to every uchmk app (the language, the size, the clock,
-//! the window, the theme) write common.toml. weft's own pages are the Keys
-//! page (each command's keys, written to keymap.toml) and the Notifications
-//! page (`[notify]` of weft's config.toml). (koyomi's settings.rs, without
-//! the records, the sign-in start and the mail.)
+//! the window, the theme) write common.toml. weft's own pages are the Editing
+//! page (ito's app page: the tab width, `[editor]` of weft's config.toml),
+//! the Keys page (each command's keys, written to keymap.toml) and the
+//! Notifications page (`[notify]` of weft's config.toml). (koyomi's
+//! settings.rs, without the records, the sign-in start and the mail.)
 
 use egui::{vec2, Align2, FontId, Sense, Stroke, StrokeKind, Ui};
 use ito_common::{themes_dir, CommonChange};
@@ -11,13 +12,15 @@ use ito_prefs::{section, MoreWords, Words};
 
 use crate::App;
 
-// ito's default order (`ito_prefs::default_order`).
+// ito's default order (`ito_prefs::default_order`); the Editing page is
+// ito's `Page::App`.
 pub const GENERAL: usize = 0;
 pub const THEME: usize = 1;
-pub const KEYS: usize = 2;
-pub const NOTIFY: usize = 3;
-pub const ADVANCED: usize = 4;
-pub const ABOUT: usize = 5;
+pub const EDITOR: usize = 2;
+pub const KEYS: usize = 3;
+pub const NOTIFY: usize = 4;
+pub const ADVANCED: usize = 5;
+pub const ABOUT: usize = 6;
 
 /// The keymap's layers and the words that name them on the Keys page.
 const LAYERS: [(&str, &str); 2] = [("app", "keys.main"), ("edit", "keys.edit")];
@@ -34,6 +37,7 @@ const CONFIG_FILE: &str = "config.toml";
 fn index(w: &'static Words, more: &'static MoreWords, lang: &str, t: &ito_i18n::Table) -> Vec<(usize, String)> {
     let keys = ito_prefs::keys_index(ito_prefs::KeyWords::of(lang)).into_iter().map(|t| (KEYS, t));
     let layers = LAYERS.iter().map(|(_, k)| (KEYS, t.tr(k)));
+    let editor = ["settings.tab", "settings.tab_width", "settings.tab_char"].into_iter().map(|k| (EDITOR, t.tr(k)));
     vec![
         (GENERAL, w.language),
         (GENERAL, w.scale),
@@ -53,6 +57,10 @@ fn index(w: &'static Words, more: &'static MoreWords, lang: &str, t: &ito_i18n::
         (THEME, "theme"),
         (THEME, "dark_theme"),
         (THEME, "light_theme"),
+        (EDITOR, "[editor]"),
+        (EDITOR, "tab_width"),
+        (EDITOR, "tab_char"),
+        (EDITOR, CONFIG_FILE),
         (KEYS, "keymap.toml"),
         (KEYS, "prepend_keymap"),
         (NOTIFY, "[notify]"),
@@ -62,6 +70,7 @@ fn index(w: &'static Words, more: &'static MoreWords, lang: &str, t: &ito_i18n::
     .chain(ito_prefs::notify_index(w).into_iter().map(|t| (NOTIFY, t)))
     .chain(keys)
     .chain(layers)
+    .chain(editor)
     .chain(ito_prefs::window_index(more).into_iter().map(|t| (GENERAL, t)))
     .chain(ito_prefs::advanced_index(more).into_iter().map(|t| (ADVANCED, t)))
     .chain(ito_prefs::mono_font_index(more).into_iter().map(|t| (THEME, t)))
@@ -82,6 +91,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     let page_words = [
         (tr("settings.general"), tr("settings.general_lead")),
         (tr("settings.theme"), tr("settings.theme_lead")),
+        (tr("settings.editor"), tr("settings.editor_lead")),
         (tr("settings.keys"), tr("settings.keys_lead")),
         (tr("settings.notify"), tr("settings.notify_lead")),
         (adv.0.to_owned(), adv.1.to_owned()),
@@ -101,9 +111,14 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     // what "Send a test" asked for.
     let mut notify_new: Option<ito_prefs::Notify> = None;
     let mut test = None;
+    // The tab width picked on the Editing page, and the tab character
+    // switched on or off.
+    let mut tab_new: Option<usize> = None;
+    let mut tab_char_new: Option<bool> = None;
     let prefs = &mut app.prefs;
     let keys_edit = &mut prefs.keys_edit;
     let (notify, notify_warn, drafts) = (&prefs.notify, &prefs.notify_warn, &mut prefs.notify_drafts);
+    let (tab_now, tab_char_now, editor_warn) = (prefs.tab_width, prefs.tab_char, &prefs.editor_warn);
     let mut bug = false;
     let mut forget = false;
     let mut advanced = Vec::new();
@@ -133,6 +148,28 @@ pub fn show(ui: &mut Ui, app: &mut App) {
             asked.extend(ito_prefs::theme_page(ui, l, w, themes, (&t, &d, &li), &note, |ui| preview(ui, &tr("settings.sample"))));
             // Read at the next start: the fonts are loaded once, in the background.
             asked.extend(ito_prefs::mono_font_card(ui, l, more, common.mono_font_or_default()));
+        }
+        EDITOR => {
+            for n in editor_warn {
+                ito_prefs::status(ui, n, l.c.err);
+            }
+            let widths = crate::prefs::TAB_WIDTHS.map(|n| (n, n.to_string()));
+            let options: Vec<(usize, &str)> = widths.iter().map(|(n, s)| (*n, s.as_str())).collect();
+            // The rows may be drawn twice (the search): they only say what was picked.
+            section(ui, l, &tr("settings.tab"), |ui| {
+                let (label, note) = (tr("settings.tab_width"), tr("settings.tab_width_note"));
+                let picked = ito_prefs::keyed_row(ui, l, "tab_width", &label, &note, |ui| {
+                    ito_prefs::seg_named(ui, l, "tab_width", &label, tab_now, &options).0
+                });
+                if picked.is_some() {
+                    tab_new = picked;
+                }
+                ito_prefs::sep(ui, l);
+                let (label, note) = (tr("settings.tab_char"), tr("settings.tab_char_note"));
+                if ito_prefs::keyed_row(ui, l, "tab_char", &label, &note, |ui| ito_prefs::switch(ui, l, tab_char_now)) {
+                    tab_char_new = Some(!tab_char_now);
+                }
+            });
         }
         KEYS => {
             let layer_name = |n: &str| LAYERS.iter().find(|(id, _)| *id == n).map_or_else(|| n.to_owned(), |(_, k)| tr(k));
@@ -188,6 +225,12 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     }
     if let Some(n) = notify_new {
         app.prefs.notify_edit(n, &no_folder);
+    }
+    if let Some(n) = tab_new {
+        app.prefs.tab_width_edit(n, &no_folder);
+    }
+    if let Some(on) = tab_char_new {
+        app.prefs.tab_char_edit(on, &no_folder);
     }
     if forget {
         if let Some(dir) = &state_dir {
@@ -254,12 +297,12 @@ mod tests {
 
     #[test]
     fn pages_follow_ito_default_order() {
-        let ours = [GENERAL, THEME, KEYS, NOTIFY, ADVANCED, ABOUT];
+        let ours = [GENERAL, THEME, EDITOR, KEYS, NOTIFY, ADVANCED, ABOUT];
         assert!(ours.windows(2).all(|w| w[0] + 1 == w[1]));
-        let has = [Page::Theme, Page::Keys, Page::Notifications, Page::Advanced];
+        let has = [Page::Theme, Page::App, Page::Keys, Page::Notifications, Page::Advanced];
         assert_eq!(
             ito_prefs::default_order(&has),
-            [Page::General, Page::Theme, Page::Keys, Page::Notifications, Page::Advanced, Page::About]
+            [Page::General, Page::Theme, Page::App, Page::Keys, Page::Notifications, Page::Advanced, Page::About]
         );
     }
 
@@ -273,5 +316,9 @@ mod tests {
         assert!(idx.iter().any(|(p, t)| *p == KEYS && t == "Everywhere"));
         assert!(idx.iter().any(|(p, t)| *p == GENERAL && t == "[window]"));
         assert!(idx.iter().any(|(p, t)| *p == NOTIFY && t == "config.toml"));
+        assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "tab_width"));
+        assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "Tab width"));
+        assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "tab_char"));
+        assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "Insert a tab character"));
     }
 }

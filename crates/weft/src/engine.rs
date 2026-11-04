@@ -6,11 +6,10 @@
 //! Positions are bytes on `char` boundaries, as ito-textbuf keeps them; every
 //! conversion goes through `ito_textbuf::pos`.
 
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use std::ops::Range;
-
-use ito_mdedit::{Change, SelChange};
+use ito_mdedit::{Change, SelChange, Unit};
 use ito_textbuf::{pos, Doc, Edit, Selection, Transaction};
 
 /// A caret move. `PageUp` / `PageDown` carry how many lines a page is.
@@ -60,6 +59,11 @@ pub struct Editor {
     locked: Option<Locked>,
     /// The column (in graphemes) up and down aim for, kept over short lines.
     goal: Option<usize>,
+    /// The spaces Tab puts in (and Shift+Tab takes away) outside tables and
+    /// lists: the settings' tab width.
+    tab: usize,
+    /// Tab puts in a tab character instead of `tab` spaces (the settings).
+    tab_char: bool,
     /// The last format command put emphasis markers where CommonMark may not
     /// read them as emphasis (next to punctuation); the app says so once.
     unflanked: bool,
@@ -72,10 +76,23 @@ pub struct Editor {
     grown_at: Option<(u64, Selection)>,
 }
 
+/// The tab width a document starts with, until the settings say otherwise.
+pub const TAB_WIDTH: usize = 4;
+
 impl Editor {
     /// A document of `text` with no file behind it.
     pub fn new(text: &str) -> Editor {
-        Editor { doc: Doc::new(text), path: None, locked: None, goal: None, unflanked: false, grown: Vec::new(), grown_at: None }
+        Editor {
+            doc: Doc::new(text),
+            path: None,
+            locked: None,
+            goal: None,
+            tab: TAB_WIDTH,
+            tab_char: false,
+            unflanked: false,
+            grown: Vec::new(),
+            grown_at: None,
+        }
     }
 
     /// Read `path`. A file that is not there yet opens empty (saving creates
@@ -425,6 +442,97 @@ impl Editor {
         self.doc.apply(Transaction::from_change(&change, before)).is_ok()
     }
 
+    /// The spaces Tab puts in outside a table and a list item, and the most
+    /// Shift+Tab takes off a line. (Only the tests ask: Tab reads `self.tab`.)
+    #[cfg(test)]
+    pub fn tab_width(&self) -> usize {
+        self.tab
+    }
+    pub fn set_tab_width(&mut self, n: usize) {
+        self.tab = n.max(1);
+    }
+    /// Whether Tab puts in a tab character instead of the spaces.
+    pub fn set_tab_char(&mut self, on: bool) {
+        self.tab_char = on;
+    }
+
+    /// What Tab puts in outside a table and a list item.
+    fn unit(&self) -> String {
+        if self.tab_char {
+            '\t'.to_string()
+        } else {
+            " ".repeat(self.tab)
+        }
+    }
+
+    /// The same, as [`ito_mdedit::shift_lines`] takes it.
+    fn shift_unit(&self) -> Unit {
+        if self.tab_char {
+            Unit::Tab
+        } else {
+            Unit::Spaces(u8::try_from(self.tab).unwrap_or(u8::MAX))
+        }
+    }
+
+    /// Whether the selection crosses a line break, so that Tab and Shift+Tab
+    /// work on its lines ([`Editor::shift_lines`]) and not at the caret.
+    pub fn spans_lines(&self) -> bool {
+        let r = self.doc.selection().range();
+        self.line_of(r.start) != self.line_of(r.end)
+    }
+
+    /// Tab outside a table and a list item, as one undo step: a tab
+    /// character or the tab width in spaces over the selection.
+    pub fn indent(&mut self) -> bool {
+        if !self.writable() {
+            return false;
+        }
+        let before = self.doc.selection();
+        let (r, unit) = (before.range(), self.unit());
+        let after = Selection::caret(r.start + unit.len());
+        self.goal = None;
+        self.doc.apply(Transaction::new(vec![Edit { range: r, text: unit }], before, after)).is_ok()
+    }
+
+    /// Shift+Tab outside a table and a list item, as one undo step: a tab,
+    /// or up to the tab width of spaces, off the start of the caret's line.
+    /// `false` when the line starts with neither.
+    pub fn outdent(&mut self) -> bool {
+        if !self.writable() {
+            return false;
+        }
+        let before = self.doc.selection();
+        let Some(line) = self.line_range(self.line_of(before.head)) else { return false };
+        let (s, n) = (line.start, unindent_len(&self.text()[line], self.tab));
+        if n == 0 {
+            return false;
+        }
+        // A position among the blanks taken away goes to the line's start.
+        let shift = |p: usize| p - p.saturating_sub(s).min(n);
+        let after = Selection { anchor: shift(before.anchor), head: shift(before.head) };
+        self.goal = None;
+        self.doc.apply(Transaction::new(vec![Edit { range: s..s + n, text: String::new() }], before, after)).is_ok()
+    }
+
+    /// Tab (`deeper`) or Shift+Tab over a selection that crosses a line
+    /// break, as one undo step: [`ito_mdedit::shift_lines`] with the tab
+    /// width or a tab (the settings) for the lines that are not list items.
+    /// The selection keeps its lines and its direction, so the next press
+    /// goes on. `false` when nothing moved.
+    pub fn shift_lines(&mut self, deeper: bool) -> bool {
+        if !self.writable() {
+            return false;
+        }
+        let before = self.doc.selection();
+        let text = self.text();
+        // A backwards selection goes in as `start > end` and comes back so.
+        let sel = pos::floor(text, before.anchor)..pos::floor(text, before.head);
+        let Some(sc) = ito_mdedit::shift_lines(text, sel, deeper, self.shift_unit()) else { return false };
+        let after = Selection { anchor: sc.selection.start, head: sc.selection.end };
+        self.goal = None;
+        self.doc.apply(Transaction::new(vec![Edit::from(&sc.change)], before, after)).is_ok()
+    }
+
     /// Run a format command of ito-mdedit over the selection (the caret as an
     /// empty range), as one undo step that leaves the selection where the
     /// command says, in the direction it had. `false` when it does not apply
@@ -513,6 +621,15 @@ fn whole_graphemes(text: &str, r: Range<usize>) -> Range<usize> {
 /// Write a save job: beside the file first, then over it.
 pub fn write(job: &SaveJob) -> Result<(), String> {
     ito_common::write_atomic(&job.path, job.bytes.as_bytes())
+}
+
+/// What Shift+Tab takes off the start of `line`: a tab, or up to `tab` spaces.
+fn unindent_len(line: &str, tab: usize) -> usize {
+    if line.starts_with('\t') {
+        1
+    } else {
+        line.bytes().take_while(|&b| b == b' ').take(tab).count()
+    }
 }
 
 #[cfg(test)]
