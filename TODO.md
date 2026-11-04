@@ -4,6 +4,7 @@
 `--version` / `--help`、F12 の不具合報告、`weft.com`、アイコンと版の情報、`--keys`、keymap.toml、F1 のヘルプ、設定の画面、パレット、字体まで済んだ。
 下の `[ ]` は、編集の画面・保存ができてから配線するもの。自前で書かずに ito のクレートを使う
 （足りない所は ito に頼む。`scripts/ito-first.py` が見ている）。
+見た目の現状（撮った画面・直書き・直すべき 3 点・ito への頼みごと）は [docs/visual-baseline.md](docs/visual-baseline.md)。
 
 - [x] `--keys` の台本: `ito-keyscript` の `Runner`（`State`・`Shot`・`Theme`・`Lang`・`Read`・`Quit`）。`WEFT_KEYS_DONE` は `lanes.conf` の `keys_env` と同じ。
   状態のファイルは `screen`（main・settings・help）・`lang`・`page`・`palette`・`notices`。
