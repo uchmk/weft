@@ -167,6 +167,8 @@
   タブのキー `defaults/keymap.toml`・コマンド名 `commands.rs`・`lang/*.toml`。+406/−94）は、タブの実体（`tabs.rs`・`App` への組み込み）が無く、
   コマンドが何もしない半端な状態なので main には入れず、枝と作業ツリーを消した。差分は `C:\dev\_wip\weft-tabs-settings.patch`（main の afc0938 には ito の rev と
   `prefs.rs` の差で素直には当たらない。タブを作るときに手で写す）。
+  2026-11-05: 枝 `wt/doctabs` でタブの実体を作った（`tabs.rs`。開く・切り替え・閉じる・タブごとの保存と未保存の確認・終了の確認・前回のタブの復元・帯・設定の行。テスト 9 件）。
+  残り: 単一インスタンス（`ito_ipc::single::acquire`）。設定の「外から開くとき」の行は出ているが、まだ何もしない（常に新しい窓）。`--keys` での実機の確かめ（TESTING に書く）。
 - [ ] 右に整形プレビュー（`ito-mdview`）、原文にミニマップ（`ito-minimap`）、目次（`ito-outline`）、位置の同期。
 - [ ] ガターの変更表示（`ito-diff`、変更の周りだけ計算）。
 - [ ] 検索と置換（`ito-match`、正規表現・あいまい）。

@@ -41,6 +41,18 @@ fixed = "weft reads {} itself: bound here, it never runs."
 "Open in the external editor at the caret" = "Open in the external editor at the caret"
 "Undo" = "Undo"
 "Redo" = "Redo"
+"Next tab" = "Next tab"
+"Previous tab" = "Previous tab"
+"Close the tab" = "Close the tab"
+"Go to tab 1" = "Go to tab 1"
+"Go to tab 2" = "Go to tab 2"
+"Go to tab 3" = "Go to tab 3"
+"Go to tab 4" = "Go to tab 4"
+"Go to tab 5" = "Go to tab 5"
+"Go to tab 6" = "Go to tab 6"
+"Go to tab 7" = "Go to tab 7"
+"Go to tab 8" = "Go to tab 8"
+"Go to tab 9" = "Go to tab 9"
 "Move left" = "Move left"
 "Move right" = "Move right"
 "Move up a line" = "Move up a line"
@@ -149,6 +161,7 @@ keys = "Keys"
 keys_lead = "Each operation's keys. Press a key to change one, ↺ to put the built-in ones back. Only what you change is written to keymap.toml."
 notify = "Notifications"
 notify_lead = "How weft tells you that a file could not be saved while its window is behind another. Written to [notify] in weft's config.toml."
+tabs = "Tabs"
 
 [notify]
 open = "Open"
@@ -170,11 +183,23 @@ no_thread = "weft could not start its file thread: nothing can be saved"
 [quit]
 title = "Unsaved changes"
 body = "{0} has changes that are not saved."
+# Several files have changes that are not saved: {0} the first, {1} how many more.
+body_many = "{0} and {1} more have changes that are not saved."
 save = "Save and quit"
 discard = "Quit without saving"
 cancel = "Cancel"
 # The question as a screen reader says it: {0} title, {1} body, then the answers' names.
 spoken = "{0}. {1} Enter: {2}, N: {3}, Esc: {4}"
+
+# Closing a tab with changes that are not saved (the title, the body and
+# Cancel are the quit question's).
+[tab]
+save = "Save and close"
+discard = "Close without saving"
+# Opening one more file would push out a tab whose changes are not saved: {0} the file to open, {1} the tab.
+full = "Could not open {0}: the tabs are full and {1} has changes that are not saved"
+# The tab of a document that has no file.
+untitled = "Untitled"
 
 # Said to a screen reader when a command does not apply at the caret.
 [edit]

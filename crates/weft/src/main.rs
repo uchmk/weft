@@ -25,6 +25,7 @@ mod notify;
 mod prefs;
 mod settings;
 mod structure;
+mod tabs;
 mod view;
 
 use std::path::{Path, PathBuf};
@@ -171,6 +172,18 @@ struct App {
     note: Option<String>,
     /// The document in front (`weft FILE`) and what goes with it.
     doc: Doc,
+    /// The window, for the workers of the documents opened later.
+    ctx: egui::Context,
+    /// The open files as tabs (src/tabs.rs); `doc` is the front one's
+    /// document, `parked` the others'.
+    tabs: ito_tabs::Tabs<PathBuf>,
+    parked: Vec<(PathBuf, Doc)>,
+    /// Where the tabs are kept between runs (nothing is written for `--keys`).
+    tab_writer: ito_common::kept::Writer,
+    /// The tab whose closing waits on the question (it has changes not
+    /// saved), and the tabs a save will close once it lands.
+    closing: Option<PathBuf>,
+    close_when_saved: Vec<PathBuf>,
     /// The file thread's way in and out.
     files: Sender<FileJob>,
     done: Receiver<FileDone>,
@@ -242,6 +255,22 @@ enum Quit {
     Go,
 }
 
+/// The look of the questions before quitting or closing a tab.
+fn confirm_style() -> ito_confirm::Style {
+    let c = ito_theme::colors();
+    ito_confirm::Style {
+        panel: c.panel,
+        border: c.border,
+        accent: Some(c.wait),
+        title: c.fg,
+        text: c.fg,
+        dim: c.dim,
+        warn: c.wait,
+        button_bg: c.border,
+        button_text: c.fg,
+    }
+}
+
 /// What the palette can do: the two fixed keys' commands, and every command
 /// of [`commands::palette`] by name (as a key runs it).
 #[derive(Clone, Copy)]
@@ -302,6 +331,10 @@ impl App {
         let (files, done) = file_thread(cc.egui_ctx.clone());
         // A click on a system notification weft showed brings this window forward.
         notify::set_window(&cc.egui_ctx);
+        let ctx = wake.clone();
+        let tab_settings = prefs::tabs_now(ito_common::base_dir().as_deref());
+        let live = script.is_none();
+        let tab_path = ito_tabs::state_path("weft");
         let mut app = Self {
             table,
             prefs,
@@ -311,6 +344,12 @@ impl App {
             lang,
             note: None,
             doc: Doc::new(move || wake.request_repaint()),
+            ctx,
+            tabs: ito_tabs::Tabs::new(tab_settings.limit),
+            parked: Vec::new(),
+            tab_writer: ito_common::kept::Writer::new(tab_path.clone().unwrap_or_default(), live && tab_path.is_some()),
+            closing: None,
+            close_when_saved: Vec::new(),
             files,
             done,
             started: std::time::Instant::now(),
@@ -336,33 +375,16 @@ impl App {
         for w in &app.key_notes {
             eprintln!("weft: {w}");
         }
+        // The tabs of the last run come back (a script starts with none), then the file given.
+        if live && tab_settings.reopen == ito_tabs::Reopen::LastTabs {
+            if let Some(p) = &tab_path {
+                app.restore_tabs(p);
+            }
+        }
         if let Some(path) = file {
             app.open(&path);
         }
         app
-    }
-
-    /// Open `path` as the document. One that cannot be read leaves the
-    /// window empty, and one that is not UTF-8 opens read-only; both are told
-    /// of under the bell.
-    fn open(&mut self, path: &Path) {
-        let name = path.display().to_string();
-        match engine::Editor::open(path) {
-            Ok(ed) => {
-                if ed.locked().is_some() {
-                    let title = self.table.trf("file.locked", &[&name]);
-                    self.outcome(ito_notices::Kind::Warn, title, Some(path.to_path_buf()));
-                }
-                self.doc.editor = Some(ed);
-                self.doc.tree = None;
-                self.doc.selected = count::Selected::default();
-                self.doc.view = view::View::default();
-            }
-            Err(e) => {
-                let title = self.table.trf("file.open_failed", &[&name, &e]);
-                self.outcome(ito_notices::Kind::Err, title, None);
-            }
-        }
     }
 
     /// An app with nothing read and no window (the tests).
@@ -380,6 +402,12 @@ impl App {
             lang: "en".to_owned(),
             note: None,
             doc: Doc::new(|| {}),
+            ctx: egui::Context::default(),
+            tabs: ito_tabs::Tabs::new(ito_tabs::DEFAULT_LIMIT),
+            parked: Vec::new(),
+            tab_writer: ito_common::kept::Writer::new(PathBuf::new(), false),
+            closing: None,
+            close_when_saved: Vec::new(),
             files,
             done,
             started: std::time::Instant::now(),
@@ -411,11 +439,12 @@ impl App {
             && self.palette.is_none()
             && !self.bell_open
             && self.quit.is_none()
+            && self.closing.is_none()
     }
 
-    /// The document has changes not yet saved.
+    /// Some open document has changes not yet saved.
     fn dirty(&self) -> bool {
-        self.doc.editor.as_ref().is_some_and(engine::Editor::is_dirty)
+        self.any_dirty()
     }
 
     /// Ctrl+Q or the window's close: straight away when nothing would be
@@ -428,6 +457,7 @@ impl App {
             self.help.close();
             self.palette = None;
             self.bell_open = false;
+            self.closing = None;
             if self.quit != Some(Quit::Asking) {
                 // The question has no focus of its own to be read out by.
                 self.announce(self.quit_spoken());
@@ -449,7 +479,7 @@ impl App {
             }
             _ => {
                 self.quit = Some(Quit::Saving);
-                self.save();
+                self.save_all();
             }
         }
     }
@@ -478,7 +508,7 @@ impl App {
     /// stays when the document is still not saved (the failure is under the
     /// bell; a document with no file is told of there too).
     fn quit_after_save(&mut self, ctx: &egui::Context) {
-        if self.quit != Some(Quit::Saving) || self.doc.saving > 0 {
+        if self.quit != Some(Quit::Saving) || self.saving() > 0 {
             return;
         }
         if self.dirty() {
@@ -489,22 +519,11 @@ impl App {
         }
     }
 
-    /// The open document's file name (none: empty).
-    fn file_name(&self) -> String {
-        self.doc
-            .editor
-            .as_ref()
-            .and_then(engine::Editor::path)
-            .and_then(Path::file_name)
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    }
-
     /// The question before quitting as the screen reader says it: what it
     /// asks, and the key of each answer.
     fn quit_spoken(&self) -> String {
         let t = &self.table;
-        let body = t.trf("quit.body", &[&self.file_name()]);
+        let body = self.quit_body();
         t.trf("quit.spoken", &[t.tr("quit.title"), &body, t.tr("quit.save"), t.tr("quit.discard"), t.tr("quit.cancel")])
     }
 
@@ -513,20 +532,8 @@ impl App {
         if self.quit != Some(Quit::Asking) {
             return;
         }
-        let name = self.file_name();
-        let c = ito_theme::colors();
-        let style = ito_confirm::Style {
-            panel: c.panel,
-            border: c.border,
-            accent: Some(c.wait),
-            title: c.fg,
-            text: c.fg,
-            dim: c.dim,
-            warn: c.wait,
-            button_bg: c.border,
-            button_text: c.fg,
-        };
-        let body = [self.table.trf("quit.body", &[&name])];
+        let style = confirm_style();
+        let body = [self.quit_body()];
         // ito-confirm sits the last button at the right: the way on, Enter's.
         let buttons = [
             format!("{}  Esc", self.table.tr("quit.cancel")),
@@ -565,7 +572,7 @@ impl App {
     /// bare key for the keymap, unless a widget (a field of the settings) has
     /// the focus and reads it.
     fn read_keys(&mut self, ctx: &egui::Context) {
-        if self.palette.is_some() || self.quit.is_some() {
+        if self.palette.is_some() || self.quit.is_some() || self.closing.is_some() {
             return;
         }
         let focused = ctx.memory(|m| m.focused().is_some());
@@ -684,6 +691,11 @@ impl App {
             "help" => self.help.toggle(),
             "file.save" => self.save(),
             "file.open_in_editor" => self.open_in_editor(),
+            _ if ito_tabs::command(name).is_some() => {
+                if let (true, Some(op)) = (self.editing(), ito_tabs::command(name)) {
+                    self.tab_op(op);
+                }
+            }
             _ if self.editing() => {
                 let (now, page) = (self.now_ms(), self.doc.view.page());
                 let (tab, tab_char) = (self.prefs.tab_width, self.prefs.tab_char);
@@ -739,23 +751,11 @@ impl App {
 
     /// Ctrl+S: what the document is now goes to the file thread.
     fn save(&mut self) {
-        let Some(ed) = &self.doc.editor else { return };
-        let path = ed.path().map(Path::to_path_buf);
-        let name = path.as_deref().map(|p| p.display().to_string()).unwrap_or_default();
-        match ed.save_job() {
-            Ok(job) => {
-                if self.send_file(FileJob::Save(job)) {
-                    self.doc.saving += 1;
-                }
-            }
-            Err(engine::NoSave::NoPath) => {
-                let title = self.table.tr("file.no_path").to_owned();
-                self.outcome(ito_notices::Kind::Warn, title, None);
-            }
-            Err(engine::NoSave::Locked(_)) => {
-                let title = self.table.trf("file.locked", &[&name]);
-                self.outcome(ito_notices::Kind::Warn, title, path);
-            }
+        if let Some(p) = self.doc.path() {
+            self.save_at(&p);
+        } else if self.doc.editor.is_some() {
+            let title = self.table.tr("file.no_path").to_owned();
+            self.outcome(ito_notices::Kind::Warn, title, None);
         }
     }
 
@@ -790,12 +790,20 @@ impl App {
         while let Ok(d) = self.done.try_recv() {
             match d {
                 FileDone::Saved { version, path, result } => {
-                    self.doc.saving = self.doc.saving.saturating_sub(1);
+                    // The save belongs to the tab of that file, in front or not.
+                    if let Some(d) = self.doc_mut(&path) {
+                        d.saving = d.saving.saturating_sub(1);
+                    }
                     let name = path.display().to_string();
+                    let closes = self.close_when_saved.iter().position(|p| *p == path).map(|i| self.close_when_saved.remove(i)).is_some();
                     match result {
                         Ok(()) => {
-                            if let Some(ed) = self.doc.editor.as_mut().filter(|ed| ed.path() == Some(path.as_path())) {
+                            if let Some(ed) = self.doc_mut(&path).and_then(|d| d.editor.as_mut()) {
                                 ed.saved(version);
+                            }
+                            // A close asked for with the save: only when nothing was typed meanwhile.
+                            if closes && !self.doc_mut(&path).is_some_and(|d| d.dirty()) {
+                                self.close_tab(&path);
                             }
                             let short = path.file_name().map_or(name.clone(), |n| n.to_string_lossy().into_owned());
                             let note = self.table.trf("file.saved", &[&short]);
@@ -859,6 +867,8 @@ impl App {
             Some(Quit::Go) => "go",
         };
         out.push_str(&format!("quit: {quit}\n"));
+        out.push_str(&self.tabs_report());
+        out.push_str(&format!("closing: {}\n", self.closing.is_some()));
         if let Some(ed) = &self.doc.editor {
             let (line, col) = ed.line_col();
             let file = ed.path().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -1304,11 +1314,12 @@ impl App {
         self.bell_open = false;
         let Some(n) = self.notices.iter_mut().find(|n| n.id == id) else { return };
         n.read = true;
-        let open = self.doc.editor.as_ref().and_then(engine::Editor::path);
-        if n.go.is_some() && n.go.as_deref() == open {
+        // About a file that is a tab: that tab comes forward, over whatever covers it.
+        if let Some(go) = n.go.clone().filter(|g| self.tabs.position(g).is_some()) {
             self.settings_open = false;
             self.help.close();
             self.palette = None;
+            self.show_tab(&go);
         }
     }
 
@@ -1408,6 +1419,9 @@ impl App {
         if self.quit == Some(Quit::Asking) {
             self.quit_keys(&ctx);
         }
+        if self.closing.is_some() {
+            self.closing_keys(&ctx);
+        }
         if self.editing() {
             // The document takes the keys without a widget's focus: one left
             // over (the settings, the palette) would type too, and Tab would
@@ -1434,6 +1448,7 @@ impl App {
             .exact_size(ito_titlebar::HEIGHT)
             .frame(egui::Frame::NONE.fill(ito_theme::colors().bg))
             .show(ui, |ui| self.title_bar(ui));
+        self.tab_bar(ui);
         egui::Panel::bottom("statusbar").exact_size(ito_statusbar::HEIGHT).frame(egui::Frame::NONE).show(ui, |ui| self.status_bar(ui));
         self.take_notices();
         self.notice_list(&ctx);
@@ -1477,6 +1492,7 @@ impl App {
             }
         }
         self.quit_question(&ctx);
+        self.closing_question(&ctx);
         // What the screen reader hears (and `--keys`' <Announced:> checks).
         for m in std::mem::take(&mut self.said) {
             ito_a11y::announce(ui, &m);

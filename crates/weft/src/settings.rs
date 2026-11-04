@@ -51,6 +51,7 @@ fn index(w: &'static Words, more: &'static MoreWords, lang: &str, t: &ito_i18n::
         (GENERAL, "scale"),
         (GENERAL, "[clock]"),
         (GENERAL, "[window]"),
+        (GENERAL, "[tabs]"),
         (THEME, w.mode),
         (THEME, w.themes),
         (THEME, w.preview),
@@ -72,6 +73,8 @@ fn index(w: &'static Words, more: &'static MoreWords, lang: &str, t: &ito_i18n::
     .chain(layers)
     .chain(editor)
     .chain(ito_prefs::window_index(more).into_iter().map(|t| (GENERAL, t)))
+    .chain(ito_prefs::tabs_index(ito_prefs::TabsWords::of(lang)).into_iter().map(|t| (GENERAL, t)))
+    .chain(ito_prefs::TABS_KEYS.into_iter().map(|t| (GENERAL, t)))
     .chain(ito_prefs::advanced_index(more).into_iter().map(|t| (ADVANCED, t)))
     .chain(ito_prefs::mono_font_index(more).into_iter().map(|t| (THEME, t)))
     .chain(ito_prefs::about_index(more, w).into_iter().map(|t| (ABOUT, t)))
@@ -115,6 +118,9 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     // switched on or off.
     let mut tab_new: Option<usize> = None;
     let mut tab_char_new: Option<bool> = None;
+    // The `[tabs]` rows, written back to config.toml when they change.
+    let tabs_words = ito_prefs::TabsWords::of(&app.lang);
+    let mut tabs_now = app.prefs.tabs;
     let prefs = &mut app.prefs;
     let keys_edit = &mut prefs.keys_edit;
     let (notify, notify_warn, drafts) = (&prefs.notify, &prefs.notify_warn, &mut prefs.notify_drafts);
@@ -138,6 +144,9 @@ pub fn show(ui: &mut Ui, app: &mut App) {
             let out = ito_prefs::window_card(ui, l, more, &common.window_or_default());
             asked.extend(out.changes);
             forget |= out.forget;
+            section(ui, l, &tr("settings.tabs"), |ui| {
+                ito_prefs::tabs_rows_in(ui, l, tabs_words, &mut tabs_now);
+            });
         }
         THEME => {
             let (t, d, li) = common.theme_choice(THEMES);
@@ -232,6 +241,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     if let Some(on) = tab_char_new {
         app.prefs.tab_char_edit(on, &no_folder);
     }
+    app.prefs.tabs_edit(tabs_now, &no_folder);
     if forget {
         if let Some(dir) = &state_dir {
             let dir = dir.clone();
@@ -320,5 +330,17 @@ mod tests {
         assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "Tab width"));
         assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "tab_char"));
         assert!(idx.iter().any(|(p, t)| *p == EDITOR && t == "Insert a tab character"));
+    }
+
+    /// The `[tabs]` rows are on the General page, found by their words and by
+    /// config.toml's keys.
+    #[test]
+    fn the_search_finds_the_tabs_rows() {
+        let (t, _) = crate::i18n::table("ja");
+        let idx = index(Words::of("ja"), MoreWords::of("ja"), "ja", &t);
+        assert!(idx.iter().any(|(p, t)| *p == GENERAL && t == "[tabs]"));
+        assert!(idx.iter().any(|(p, t)| *p == GENERAL && t == "tabs.show_bar"));
+        let words = ito_prefs::tabs_index(ito_prefs::TabsWords::of("ja"));
+        assert!(words.iter().all(|w| idx.iter().any(|(p, t)| *p == GENERAL && t == w)));
     }
 }

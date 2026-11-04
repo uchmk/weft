@@ -50,6 +50,81 @@ on = "<C-S-z>"
 run = "edit.redo"
 desc = "Redo"
 
+# --- Tabs ---
+#
+# Ctrl+Shift+Tab is written `<C-S-Tab>`. Alt+N goes to tab N; Alt+Shift+N
+# (`<A-S-5>`) is another key.
+
+[[app.keymap]]
+on = "<C-Tab>"
+run = "tab.next"
+desc = "Next tab"
+
+[[app.keymap]]
+on = "<C-PageDown>"
+run = "tab.next"
+desc = "Next tab"
+
+[[app.keymap]]
+on = "<C-S-Tab>"
+run = "tab.prev"
+desc = "Previous tab"
+
+[[app.keymap]]
+on = "<C-PageUp>"
+run = "tab.prev"
+desc = "Previous tab"
+
+[[app.keymap]]
+on = "<C-w>"
+run = "tab.close"
+desc = "Close the tab"
+
+[[app.keymap]]
+on = "<A-1>"
+run = "tab.goto_1"
+desc = "Go to tab 1"
+
+[[app.keymap]]
+on = "<A-2>"
+run = "tab.goto_2"
+desc = "Go to tab 2"
+
+[[app.keymap]]
+on = "<A-3>"
+run = "tab.goto_3"
+desc = "Go to tab 3"
+
+[[app.keymap]]
+on = "<A-4>"
+run = "tab.goto_4"
+desc = "Go to tab 4"
+
+[[app.keymap]]
+on = "<A-5>"
+run = "tab.goto_5"
+desc = "Go to tab 5"
+
+[[app.keymap]]
+on = "<A-6>"
+run = "tab.goto_6"
+desc = "Go to tab 6"
+
+[[app.keymap]]
+on = "<A-7>"
+run = "tab.goto_7"
+desc = "Go to tab 7"
+
+[[app.keymap]]
+on = "<A-8>"
+run = "tab.goto_8"
+desc = "Go to tab 8"
+
+[[app.keymap]]
+on = "<A-9>"
+run = "tab.goto_9"
+desc = "Go to tab 9"
+
 # --- The caret ---
 
 [[edit.keymap]]

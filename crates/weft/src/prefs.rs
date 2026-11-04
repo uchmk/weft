@@ -1,8 +1,8 @@
 //! What the settings screen reads and writes (ito's `docs/common-spec.md`):
 //! common.toml (the language, the scale, the theme and the clock, shared by
 //! every uchmk app), the person's themes, weft's keymap.toml, and the
-//! `[editor]` (the Editing page) and `[notify]` (the Notifications page)
-//! tables of weft's config.toml (the rest of config.toml stays a file). The
+//! `[editor]` (the Editing page), `[notify]` (the Notifications page) and
+//! `[tabs]` (the tabs' rows of General) tables of weft's config.toml (the rest of config.toml stays a file). The
 //! files are watched every 2 s and written
 //! on threads of their own; what was read comes back as a [`Reload`], which
 //! [`Prefs::pump`] folds in. The UI thread never touches the disk.
@@ -45,6 +45,9 @@ pub fn config_path(base: &Path) -> PathBuf {
 pub struct Config {
     pub notify: NotifyCfg,
     pub open: ito_openin::Config,
+    /// `[tabs]`: when the bar shows, where a file from outside goes, what
+    /// reopens at start.
+    pub tabs: ito_tabs::Settings,
     pub warnings: Vec<String>,
     /// `[editor] tab_width` and `tab_char`, and what the Editing page warns of.
     pub tab_width: usize,
@@ -120,6 +123,29 @@ pub fn read_tab_char(text: Option<&str>) -> (bool, Vec<String>) {
     }
 }
 
+/// config.toml's `[tabs]` from its `text` (none: the defaults), and what to
+/// warn of when it does not read (the defaults then).
+pub fn read_tabs(text: Option<&str>) -> (ito_tabs::Settings, Vec<String>) {
+    let Some(text) = text else { return Default::default() };
+    // The file's own syntax error is said by the `[notify]` reading.
+    let Ok(table) = toml::from_str::<toml::Table>(text) else { return Default::default() };
+    match table.get("tabs") {
+        None => Default::default(),
+        Some(v) => match v.clone().try_into::<ito_tabs::Settings>() {
+            Ok(s) => (s, Vec::new()),
+            Err(e) => (ito_tabs::Settings::default(), vec![format!("config.toml [tabs]: {}", e.message())]),
+        },
+    }
+}
+
+/// `[tabs]` of the config.toml in `base`, read now: what `main` needs before
+/// the window opens (whether to hand the files to a running window, whether
+/// to reopen the last tabs). Missing or unreadable: the defaults.
+pub fn tabs_now(base: Option<&Path>) -> ito_tabs::Settings {
+    let text = base.and_then(|b| std::fs::read_to_string(config_path(b)).ok());
+    read_tabs(text.as_deref()).0
+}
+
 /// The config.toml at `path` (none: the defaults): `[notify]` as the page
 /// shows it, the `secret:` addresses read back from the credential store,
 /// and `[open]` / `[line_args]`. Blocks on the store: call it off the UI
@@ -134,7 +160,8 @@ fn read_config(path: &Path) -> Result<Box<Config>, String> {
     warnings.extend(notify.reveal("weft"));
     let (open, open_warn) = ito_openin::Config::read(text.as_deref());
     // The file's own syntax error is said once, by the `[notify]` reading.
-    for w in open_warn {
+    let (tabs, tabs_warn) = read_tabs(text.as_deref());
+    for w in open_warn.into_iter().chain(tabs_warn) {
         if !warnings.contains(&w) {
             warnings.push(w);
         }
@@ -142,7 +169,7 @@ fn read_config(path: &Path) -> Result<Box<Config>, String> {
     let (tab_width, mut editor_warn) = read_editor(text.as_deref());
     let (tab_char, char_warn) = read_tab_char(text.as_deref());
     editor_warn.extend(char_warn);
-    Ok(Box::new(Config { notify, open, warnings, tab_width, tab_char, editor_warn }))
+    Ok(Box::new(Config { notify, open, tabs, warnings, tab_width, tab_char, editor_warn }))
 }
 
 /// One lock for every writer of config.toml from the window.
@@ -247,6 +274,8 @@ pub struct Prefs {
     pub notify_warn: Vec<String>,
     /// `[open]` and `[line_args]` of config.toml: the editor `file.open_in_editor` starts.
     pub open: ito_openin::Config,
+    /// `[tabs]` of config.toml.
+    pub tabs: ito_tabs::Settings,
     /// The Notifications page's fields while they are typed in.
     pub notify_drafts: ito_prefs::Drafts,
     /// `[editor] tab_width` of config.toml: the spaces Tab puts in outside
@@ -286,6 +315,7 @@ impl Prefs {
             notify: crate::notify::read(None).0,
             notify_warn: Vec::new(),
             open: ito_openin::Config::default(),
+            tabs: ito_tabs::Settings::default(),
             notify_drafts: ito_prefs::Drafts::new(),
             tab_width: crate::engine::TAB_WIDTH,
             tab_char: false,
@@ -385,7 +415,7 @@ impl Prefs {
                 }
                 Reload::Config(Ok(c)) => {
                     let c = *c;
-                    (self.notify, self.open, self.notify_warn) = (c.notify, c.open, c.warnings);
+                    (self.notify, self.open, self.tabs, self.notify_warn) = (c.notify, c.open, c.tabs, c.warnings);
                     (self.tab_width, self.tab_char, self.editor_warn) = (c.tab_width, c.tab_char, c.editor_warn);
                 }
                 // Unreadable (being written, say): the pages keep what they
@@ -549,6 +579,30 @@ impl Prefs {
         });
     }
 
+    /// The tabs' rows of General: `s` at once, and into config.toml's
+    /// `[tabs]` on a thread (only the keys that differ from the file), then
+    /// read again.
+    pub fn tabs_edit(&mut self, s: ito_tabs::Settings, no_folder: &str) {
+        if s == self.tabs {
+            return;
+        }
+        self.tabs = s;
+        let (tx, wake) = (self.tx.clone(), self.wake.clone());
+        let Some(base) = self.base.clone() else {
+            Self::send_back(&tx, &wake, Reload::Failed(no_folder.into()));
+            return;
+        };
+        std::thread::spawn(move || {
+            let _one = CONFIG_ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+            let path = config_path(&base);
+            let r = match write_config(&path, Some("tabs"), &tabs_edits(&s), None) {
+                Ok(()) => Reload::Config(read_config(&path)),
+                Err(e) => Reload::Failed(e),
+            };
+            Self::send_back(&tx, &wake, r);
+        });
+    }
+
     /// Open a settings file of the base (`common_path`, `config_path`), made
     /// empty first when there is none, with what the OS opens it with, on a
     /// thread. An empty file reads as the defaults, as no file does.
@@ -637,6 +691,16 @@ impl Prefs {
 
 fn open_path(path: &Path) -> Result<(), String> {
     ito_openin::open_default(path)
+}
+
+/// The keys of `[tabs]` the settings screen sets, as TOML values.
+fn tabs_edits(s: &ito_tabs::Settings) -> Vec<(&'static str, String)> {
+    let v = |x: Result<toml::Value, toml::ser::Error>| x.map(|v| v.to_string()).unwrap_or_default();
+    vec![
+        ("show_bar", v(toml::Value::try_from(s.show_bar))),
+        ("open_from_outside", v(toml::Value::try_from(s.open_from_outside))),
+        ("reopen", v(toml::Value::try_from(s.reopen))),
+    ]
 }
 
 #[cfg(test)]
@@ -753,6 +817,42 @@ mod tests {
         assert!(!on && warnings.len() == 1 && warnings[0].contains("tab_char"), "{warnings:?}");
         assert_eq!(read_tab_char(Some("[editor]\ntab_width = \"wide\"\ntab_char = true\n")), (true, vec![]));
         assert_eq!(read_tab_char(Some("[editor\n")), (false, vec![]));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 12.9: The tabs' rows of General land in config.toml's `[tabs]` (not
+    /// common.toml), read back as they were set, beside the other tables;
+    /// a value that does not read is the defaults and a warning.
+    #[test]
+    fn the_tab_settings_go_to_the_config_and_back() {
+        use ito_tabs::{OpenFromOutside, Reopen, Settings, ShowBar};
+        let dir = std::env::temp_dir().join(format!("weft-tabs-config-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = config_path(&dir);
+        assert_eq!(tabs_now(Some(&dir)), Settings::default(), "no file: the defaults");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "# mine\n[notify]\nfocus_mode = false\n").unwrap();
+        let s = Settings {
+            show_bar: ShowBar::Always,
+            open_from_outside: OpenFromOutside::NewWindow,
+            reopen: Reopen::OnlyGiven,
+            ..Settings::default()
+        };
+        write_config(&path, Some("tabs"), &tabs_edits(&s), None).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("# mine\n[notify]\nfocus_mode = false\n") && text.contains("[tabs]"), "{text}");
+        assert!(text.contains(r#"show_bar = "always""#) && text.contains(r#"reopen = "only_given""#), "{text}");
+        assert_eq!(tabs_now(Some(&dir)), s);
+        let c = read_config(&path).unwrap();
+        assert_eq!(c.tabs, s);
+        assert!(c.warnings.is_empty(), "{:?}", c.warnings);
+        assert!(!common_path(&dir).exists(), "nothing of it is common.toml's");
+        // Unchanged: the file is not written again.
+        write_config(&path, Some("tabs"), &tabs_edits(&s), None).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        let (bad, warn) = read_tabs(Some("[tabs]\nshow_bar = \"sometimes\"\n"));
+        assert_eq!(bad, Settings::default());
+        assert!(warn.len() == 1 && warn[0].starts_with("config.toml [tabs]:"), "{warn:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

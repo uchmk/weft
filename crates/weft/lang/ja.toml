@@ -36,6 +36,18 @@ fixed = "{} は weft が先に読むので、ここに割り当てても動き�
 "Open in the external editor at the caret" = "カーソルの位置で外部エディターで開く"
 "Undo" = "元に戻す"
 "Redo" = "やり直す"
+"Next tab" = "次のタブへ"
+"Previous tab" = "前のタブへ"
+"Close the tab" = "タブを閉じる"
+"Go to tab 1" = "1 番目のタブへ"
+"Go to tab 2" = "2 番目のタブへ"
+"Go to tab 3" = "3 番目のタブへ"
+"Go to tab 4" = "4 番目のタブへ"
+"Go to tab 5" = "5 番目のタブへ"
+"Go to tab 6" = "6 番目のタブへ"
+"Go to tab 7" = "7 番目のタブへ"
+"Go to tab 8" = "8 番目のタブへ"
+"Go to tab 9" = "9 番目のタブへ"
 "Move left" = "左へ"
 "Move right" = "右へ"
 "Move up a line" = "上の行へ"
@@ -144,6 +156,7 @@ keys = "キー"
 keys_lead = "操作ごとのキー。キーを押して変え、↺ で既定に戻します。keymap.toml には変えた分だけを書きます。"
 notify = "通知"
 notify_lead = "窓が後ろにあるときに、ファイルを保存できなかったことの知らせ方。weft の config.toml の [notify] に書きます。"
+tabs = "タブ"
 
 [notify]
 open = "開く"
@@ -164,10 +177,17 @@ no_thread = "ファイルを扱うスレッドを起動できなかったため�
 [quit]
 title = "保存していない変更があります"
 body = "{0} の変更はまだ保存されていません。"
+body_many = "{0} ほか {1} 件の変更はまだ保存されていません。"
 save = "保存して終了"
 discard = "保存せずに終了"
 cancel = "やめる"
 spoken = "{0}。{1} Enter: {2}、N: {3}、Esc: {4}"
+
+[tab]
+save = "保存して閉じる"
+discard = "保存せずに閉じる"
+full = "{0} を開けませんでした: タブがいっぱいで、{1} に保存していない変更があります"
+untitled = "無題"
 
 [edit]
 nothing = "{0}: ここでは何もできません"
