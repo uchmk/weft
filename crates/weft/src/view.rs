@@ -14,7 +14,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use egui::text::{CCursor, LayoutJob, TextFormat};
-use egui::{pos2, vec2, Align2, Color32, Event, FontId, Galley, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{pos2, vec2, Align2, Color32, FontId, Galley, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use ito_textbuf::pos;
 use ito_theme::mix;
 
@@ -125,8 +125,11 @@ impl View {
     }
 
     /// Draw `ed` in what is left of `ui`. With `keys` the document has the
-    /// keys: typing, the input method, copy and paste and the mouse go to it.
-    pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, keys: bool, now_ms: u64) {
+    /// keys: the input method and the mouse go to it. Typing, copy and paste
+    /// and the input method's commits come in with the keys, in their order,
+    /// before this; here the composition is drawn and the candidate window
+    /// placed.
+    pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, keys: bool) {
         let rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(rect, Sense::click_and_drag());
         let c = ito_theme::colors();
@@ -140,41 +143,16 @@ impl View {
         }
         self.row_h = row_h;
 
-        // --- What was typed.
+        // --- The composition. Its commits went in with the keys (`f.commits`
+        // is not inserted again); a commit held for its echo is not drawn,
+        // the document has it.
         let mut preedit = String::new();
         if keys {
             let f = self.ime.frame(ui, self.caret_rect, ed.caret() as u64);
-            let mut changed = false;
-            for t in &f.commits {
-                changed |= ed.commit(t, now_ms);
-            }
             if f.composing {
                 preedit = f.preedit;
-                changed = true;
+                self.follow = true;
             }
-            let events = ui.input(|i| i.events.clone());
-            for e in events {
-                match e {
-                    Event::Text(t) => {
-                        let t: String = t.chars().filter(|ch| !ch.is_control()).collect();
-                        changed |= ed.insert(&t, now_ms);
-                    }
-                    Event::Paste(t) => changed |= ed.paste(&t, now_ms),
-                    Event::Copy => {
-                        if let Some(s) = ed.selected_text() {
-                            ui.ctx().copy_text(s);
-                        }
-                    }
-                    Event::Cut => {
-                        if let Some(s) = ed.cut(now_ms) {
-                            ui.ctx().copy_text(s);
-                            changed = true;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            self.follow |= changed;
         }
 
         let text = ed.text();
@@ -459,7 +437,7 @@ mod tests {
         let mut ed = Editor::new(&"line\n".repeat(6000));
         ed.go_to(5000, 1);
         let mut view = View::default();
-        let mut frame = |view: &mut View| ctx.run_ui(input(), |ui| view.show(ui, &mut ed, None, false, 0)).drop_without_applying_deltas();
+        let mut frame = |view: &mut View| ctx.run_ui(input(), |ui| view.show(ui, &mut ed, None, false)).drop_without_applying_deltas();
         frame(&mut view);
         assert!(shown(&view), "line 5000 at {} with the view at {}", 4999.0 * view.row_h, view.scroll.y);
         // Another face: egui's own proportional one, a little lower than its monospace.

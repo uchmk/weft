@@ -45,7 +45,7 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 | # | Do | Expect |
 |---|---|---|
 | 4.1 | Press `Ctrl+Shift+P`, or click the palette field in the title bar | The palette lists Report a problem, Reset the scale, Settings, Key help, Quit, Save, the external editor, Undo, Redo, Select all, the block, section, list and table commands and the format commands of section 10; not the caret's moves |
-| 4.2 | Look at the right of each row in 4.1 | Every command the keymap binds shows its key (`Ctrl+,`, `F1`, `Ctrl+Q`, `Ctrl+S`, `Alt+↑`, `Ctrl+B`, `Ctrl+1`); Renumber the list, Format the table, the cell moves, strikethrough, the quote, the task list, Check / Uncheck the selected tasks and Turn the headings into paragraphs have none |
+| 4.2 | Look at the right of each row in 4.1 | Every command the keymap binds shows its key (`Ctrl+,`, `F1`, `Ctrl+Q`, `Ctrl+S`, `Alt+↑`, `Ctrl+B`, `Ctrl+1`, `Alt+Q`); Renumber the list, Format the table, the cell moves and Turn the headings into paragraphs have none |
 | 4.3 | Type `set` and press `Enter` | The settings open |
 | 4.4 | Press `Esc` with the palette open | The palette closes and nothing runs |
 
@@ -97,6 +97,14 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 | 8.13 | Look at the full-width spaces and the hard-break marks of 8.10 in a light and a dark theme; type quickly in a long file that has them | The marks are seen but quieter than the text in both themes; typing never waits for them |
 | 8.14 | Turn the IME off and on, and go through its input modes | By the clock, after "Composing" and before the encoding, the status bar says "IME off", or the mode: "Hiragana", "Full-width katakana", "Half-width katakana", "Full-width alphanumeric" or "Half-width alphanumeric" ("IME on" for a mode of another language); where it cannot be told, nothing. In Japanese the words are Japanese |
 | 8.15 | With Microsoft IME, press `半角/全角`, then change the input mode from its menu on the taskbar, with weft in front | The status bar follows each change at once, in the language's words; on is in the colour of the text, off is quieter |
+| 8.16 | As egui sends them from Windows in one frame: type `a`, press `←`, type `b`, press `Alt+T`, type `c`; press `Ctrl+Z` three times. In an empty file: `a`, `Shift+A`, `Space`, `Enter`, `1`, `Shift+1` | `- [ ] bca`: the keys and the characters go in the order they came, and `Alt+T` types no `t`; the `Ctrl+Z`s take off `c`, then the task, then `ba`. The second gives `aA ` and `1!` on the next line, each character once |
+| 8.17 | As egui sends them from Windows: in `ab` with the caret after `a`, `Ctrl+V` and `Shift+Insert` with `clip` on the clipboard; select `word` in `a word` and press `Ctrl+X`, `Shift+Delete`, `Ctrl+C`, `Ctrl+Insert`; let the key go in the same frame and in the next | Each paste puts `clip` in once; each cut takes `word` out once and puts it on the clipboard; each copy puts `word` on the clipboard and changes nothing |
+| 8.18 | As egui sends them from Windows, on a Shift_JIS file with everything selected: type `a`, press `Alt+Q`, `Ctrl+B`, `Ctrl+V`, `Ctrl+X`; then `Ctrl+C` | The text stays as it was; `Ctrl+C` still copies it |
+| 8.19 | On a JIS and on a US keyboard, with the IME off, type a line quickly with letters, `Shift`, `Space`, `←`, `Enter`, `Alt+T` and `Ctrl+V` among them; with the IME on, type and commit Japanese with `Alt+Q` and `Ctrl+B` between; type in a field of the settings (`Ctrl+,`) | Every character goes in once, where the caret was when it was typed; no Alt key types its letter; a paste goes in once; the committed Japanese goes in at the caret; the settings field takes what is typed and the document none of it |
+| 8.20 | As egui sends them: a Korean `한` composed, then committed by `Space` (the commit, `Space` and its ` ` in one frame), then two frames more; a commit of `日本` then `a` in one frame; `a` then a commit of `日本` in one frame, then `Ctrl+Z` | `한` shows as a composition and is not typed until the commit; then the text is `한 `, and stays so (the commit goes in once); `日本a`; `a日本`, and `Ctrl+Z` takes off `日本` alone |
+| 8.21 | As egui sends them from a Mac: `Option+A` (bound to nothing, it sends `å`); with two lines selected, `Option+T` (it sends `†`); then `Alt+A` from Windows | `å` goes in; `Option+T` makes the lines tasks and types no `†`; on Windows `Alt+A` types nothing |
+| 8.22 | As egui sends it: select `word` and type `Alt+0165` on the numpad (the digits with `Alt` held, then `Alt` let go, then `¥`) | `¥` takes the place of `word`; nothing is struck through and no command runs |
+| 8.23 | With the Korean IME, type `한` and press `Space`, then `한` and `Enter`; with the Japanese IME, type にほん, convert and press `a` without committing first; with the IME off, select a word and type `Alt+0165` on the numpad (Num Lock on) | `한 ` goes in once, the composition showing at the caret with the candidate window by it until then; after `Enter` the syllable is in once; the Japanese goes in before the `a`; `¥` takes the place of the word and nothing is struck through |
 
 ## 9. The external editor and key scripts
 
@@ -114,8 +122,10 @@ A test takes a row off the list by naming its number in a doc comment on the `#[
 
 The keys: bold `Ctrl+B`, italic `Ctrl+I`, inline code `` Ctrl+` `` (`Ctrl+Shift+@` on JIS), a link `Ctrl+K`, headings `Ctrl+1` to `Ctrl+6`
 (the same key again makes the line a paragraph), the code block `Ctrl+[` (`Ctrl+@` on JIS), the bulleted list `Ctrl+Shift+]`, the numbered list
-`Ctrl+Shift+[`, and Toggle the task keeps its `Ctrl+Enter`. Strikethrough, the quote, the task list, Check / Uncheck the selected tasks and
-Turn the headings into paragraphs have no key yet: run them by name from the palette (`Ctrl+Shift+P`).
+`Ctrl+Shift+[`, strikethrough `Alt+Shift+5`, the quote `Alt+Q`, the task list `Alt+T`, Check / Uncheck the selected tasks `Alt+X` /
+`Alt+Shift+X`, and Toggle the task keeps its `Ctrl+Enter`. An Alt key never types its character (but on a Mac, where Option types
+characters). `Alt+5` is a key of its own and runs nothing. Turn the headings into paragraphs has no key yet: run it by name from the
+palette (`Ctrl+Shift+P`).
 
 | # | Do | Expect |
 |---|---|---|
@@ -130,12 +140,16 @@ Turn the headings into paragraphs have no key yet: run them by name from the pal
 | 10.9 | Put the caret in a ` ``` ` block and run "Toggle bold", "Toggle heading 1", "Toggle the quote", "Check the selected tasks"; press `Ctrl+Z`; open a Shift_JIS file and run them | Nothing changes and `Ctrl+Z` has nothing to undo from them; the Shift_JIS file stays as it is |
 | 10.10 | Select `「強調」` in `「強調」です` and run "Toggle bold"; run it again | `**「強調」**です` goes in, and the status bar says once that next to punctuation the marks may not show as emphasis (said to a screen reader too; nothing under the bell, nothing to answer); taking it off says nothing |
 | 10.11 | Put the caret in a word and run "Toggle italic", "Toggle inline code" and "Toggle strikethrough" (each again to take it off); select a word and run "Toggle a link" | The word gets `*…*`, `` `…` `` and `~~…~~` with their colours; the link is `[word]()` with the caret between the parentheses, ready for the address |
-| 10.12 | Press each key above as egui sends it from a JIS and a US keyboard (`Ctrl+Shift+@` and `` Ctrl+` `` alike) | Each runs its command while the document has the keys, and the palette shows it by its command; none takes `F12`, the palette's, the scale's or the clipboard's key, nor a key already bound; Turn the headings into paragraphs is offered unbound on the Keys page |
+| 10.12 | Press each `Ctrl` key above as egui sends it from a JIS and a US keyboard (`Ctrl+Shift+@` and `` Ctrl+` `` alike), let go in the same frame and in the next | Each runs its command once while the document has the keys, and the palette shows it by its command; none takes `F12`, the palette's, the scale's or the clipboard's key, nor a key already bound; Turn the headings into paragraphs is offered unbound on the Keys page |
 | 10.13 | On a JIS keyboard, with the IME off, select a word and press `Ctrl+B`, `Ctrl+I`, `Ctrl+Shift+@` and `Ctrl+K` (each but the link twice); press `Ctrl+2` twice on a line, `Ctrl+@` over two lines, `Ctrl+Shift+]` and `Ctrl+Shift+[` over two lines; then the same on a US keyboard with `` Ctrl+` `` and `Ctrl+[`; open the key help (`F1`) and the palette | Each key does what its command does in 10.1–10.11 (the second `Ctrl+2` makes the line a paragraph again) and types nothing; the key help and the palette list each key by its command |
+| 10.14 | Press each `Alt` key above as egui sends it from Windows (the key, then its character: `Alt+Shift+5` sends `%`); press `Alt+Z` and, with a word selected, `Alt+5`, which run nothing | Each runs its command as the palette runs it by name and types nothing; the palette and the key help show `Alt+Q`, `Alt+T`, `Alt+Shift+5`, `Alt+X`, `Alt+Shift+X` by their commands; none is `F12`, the palette's, the scale's or the clipboard's key, and none is bound twice; `Alt+Z` and `Alt+5` change nothing and type nothing |
+| 10.15 | On a JIS and on a US keyboard, with the IME off and then on, select two lines and press `Alt+Q`, `Alt+T` (each twice); select a word and press `Alt+Shift+5` (twice), then `Alt+5`; select tasks and press `Alt+X`, then `Alt+Shift+X`; open the key help (`F1`) and the palette | Each does what its command does in 10.4, 10.6, 10.7 and 10.11 and types nothing, with the IME on too; `Alt+5` does nothing; the window's menu does not open; the key help and the palette list each key by its command |
 
 ## 11. Structure commands
 
-None of these has a key yet: run them by name from the palette (`Ctrl+Shift+P`), or bind one on the Keys page of the settings.
+The keys: Expand the selection `Alt+W`, Shrink the selection `Alt+Shift+W`, To the next heading `Alt+N`, To the previous heading `Alt+P`,
+To the parent heading `Alt+U`. They type no letter. The rest (the table of contents, the deletes, the other moves) have no key: run them by
+name from the palette (`Ctrl+Shift+P`), or bind one on the Keys page of the settings.
 
 | # | Do | Expect |
 |---|---|---|
@@ -148,3 +162,6 @@ None of these has a key yet: run them by name from the palette (`Ctrl+Shift+P`),
 | 11.7 | Open a CRLF file with a BOM, run "Insert or update the table of contents" and "Turn this section's heading into a paragraph" on a setext heading, and save | The status bar still says CRLF and BOM; the saved file has CRLF on every line, the list's lines too, and starts with the BOM |
 | 11.8 | Open a Shift_JIS file and run 11.1, 11.4, 11.5 and 11.2 | The table of contents and the deletes change nothing; the moves, Expand and Shrink the selection still move the caret and the selection; the file is not marked unsaved |
 | 11.9 | Open the palette in Japanese and type 目次, 選択, 見出し; bind "Expand the selection" to a key on the Keys page and open the key help (`F1`); select `Wow!́` (the `!` with a combining accent) by Expand from the `W` | Every new command is listed by its Japanese name; the key help lists the bound key by the command's name; the second Expand takes the `!` with its accent, and Shrink never leaves the accent apart from it |
+| 11.10 | Press `Alt+W`, then `Alt+Shift+W` after two `Alt+W`s, `Alt+N`, `Alt+P` and `Alt+U` as egui sends them from Windows (the key, then its letter), with the caret in a section's body | Each selects or moves as the palette runs its command by name, and the text does not change (no letter typed); the palette and the key help show `Alt+W`, `Alt+Shift+W`, `Alt+N`, `Alt+P`, `Alt+U` by their commands; none is `F12`, the palette's, the scale's or the clipboard's key, and none is bound twice |
+| 11.11 | On a JIS and on a US keyboard, with the IME off and then on, do 11.2 with `Alt+W` and `Alt+Shift+W`, and 11.5's headings with `Alt+N`, `Alt+P` and `Alt+U`; open the key help (`F1`) and the palette | Each does what its command does in 11.2 and 11.5 and types no letter, with the IME on too; the window's menu does not open; the key help and the palette list each key by its command |
+| 11.12 | In `# P`, `body`, `> ## Q`, `q` (blank lines between), put the caret at the start of the `> ## Q` line and run "Delete the heading line, keeping its body"; press `Ctrl+Z`; the same with `- ## L` and ` ## C` (one space) for the line | The line goes with its `> ` (`- `, ` `) and the blank line after it: `# P`, `body`, `q` are left, `# P` untouched; one `Ctrl+Z` brings it back |

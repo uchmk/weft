@@ -223,11 +223,40 @@ on = "<C-CR>"
 run = "list.toggle_task"
 desc = "Toggle the task"
 
+# Moving and selecting by structure. Alt+Shift+W is written `<A-S-w>`.
+
+[[edit.keymap]]
+on = "<A-w>"
+run = "select.expand"
+desc = "Expand the selection"
+
+[[edit.keymap]]
+on = "<A-S-w>"
+run = "select.shrink"
+desc = "Shrink the selection"
+
+[[edit.keymap]]
+on = "<A-n>"
+run = "cursor.next_heading"
+desc = "To the next heading"
+
+[[edit.keymap]]
+on = "<A-p>"
+run = "cursor.prev_heading"
+desc = "To the previous heading"
+
+[[edit.keymap]]
+on = "<A-u>"
+run = "cursor.parent_heading"
+desc = "To the parent heading"
+
 # --- Formatting ---
 #
 # A shifted symbol is written as the symbol it types: `<C-{>` is Ctrl+Shift+[.
 # On a JIS keyboard Ctrl+Shift+@ arrives as `<C-`>` and Ctrl+@ as `<C-[>`.
 # Pressing a heading's key on a heading of that level makes it a paragraph.
+# An Alt key never types its character. A digit keeps its Shift: `<A-S-5>` is
+# Alt+Shift+5 and `<A-5>` is Alt+5, two keys; Ctrl+Shift+1 is `<C-S-1>`.
 
 [[edit.keymap]]
 on = "<C-b>"
@@ -243,6 +272,11 @@ desc = "Toggle italic"
 on = "<C-`>"
 run = "inline.code"
 desc = "Toggle inline code"
+
+[[edit.keymap]]
+on = "<A-S-5>"
+run = "inline.strike"
+desc = "Toggle strikethrough"
 
 [[edit.keymap]]
 on = "<C-k>"
@@ -285,6 +319,11 @@ run = "block.fence"
 desc = "Toggle the code block"
 
 [[edit.keymap]]
+on = "<A-q>"
+run = "block.quote"
+desc = "Toggle the quote"
+
+[[edit.keymap]]
 on = "<C-}>"
 run = "list.bullet"
 desc = "Toggle the bulleted list"
@@ -293,3 +332,18 @@ desc = "Toggle the bulleted list"
 on = "<C-{>"
 run = "list.number"
 desc = "Toggle the numbered list"
+
+[[edit.keymap]]
+on = "<A-t>"
+run = "list.task"
+desc = "Toggle the task list"
+
+[[edit.keymap]]
+on = "<A-x>"
+run = "list.check_tasks"
+desc = "Check the selected tasks"
+
+[[edit.keymap]]
+on = "<A-S-x>"
+run = "list.uncheck_tasks"
+desc = "Uncheck the selected tasks"

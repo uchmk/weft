@@ -1,6 +1,6 @@
 # Checklist
 
-83 checks in TESTING.md, 49 left for a person.
+96 checks in TESTING.md, 53 left for a person.
 
 ## 1. Start
 
@@ -70,7 +70,7 @@
 
 ## 8. Editing
 
-自動テスト済みなので下には出していない: 8.6, 8.9, 8.10, 8.14
+自動テスト済みなので下には出していない: 8.6, 8.9, 8.10, 8.14, 8.16, 8.17, 8.18, 8.20, 8.21, 8.22
 
 - [ ] **8.1** Run `weft FILE.md` on a file with CRLF line ends and a BOM; move with `←` `→` over `é`, `漢字` and `👍🏽` → The caret steps over a whole character each time (the emoji with its skin tone is one); the status bar says the line and column and, by the clock, `UTF-8`, `BOM` and `CRLF` 〔未訳〕
 - [ ] **8.2** Type a word, press `Enter`, type another; press `Ctrl+Z` three times, then `Ctrl+Y`; press `Backspace` three times quickly, then `Ctrl+Z` → The status bar says "Unsaved"; each `Ctrl+Z` takes back one step (the second word, the line break, the first word), and "Unsaved" goes once the text is back as it was read; `Ctrl+Y` puts the first word back. The three `Backspace`s come back with one `Ctrl+Z` 〔未訳〕
@@ -82,6 +82,8 @@
 - [ ] **8.12** Open a `.md` of about 8 MB (a few lines copied over and over); type quickly; press `Ctrl+A`; press `Ctrl+Home`, then `Ctrl+Shift+End`; type over the selection, then press `Ctrl+Z` → No key hitches: each shows at once. The document's count stays the old one until the new reading comes, within about a second of the last key; "Selected" shows the selection's count, or "Selected …" until the reading comes and then the count (after `Ctrl+Z` the selection is back, and its count with it) 〔未訳〕
 - [ ] **8.13** Look at the full-width spaces and the hard-break marks of 8.10 in a light and a dark theme; type quickly in a long file that has them → The marks are seen but quieter than the text in both themes; typing never waits for them 〔未訳〕
 - [ ] **8.15** With Microsoft IME, press `半角/全角`, then change the input mode from its menu on the taskbar, with weft in front → The status bar follows each change at once, in the language's words; on is in the colour of the text, off is quieter 〔未訳〕
+- [ ] **8.19** On a JIS and on a US keyboard, with the IME off, type a line quickly with letters, `Shift`, `Space`, `←`, `Enter`, `Alt+T` and `Ctrl+V` among them; with the IME on, type and commit Japanese with `Alt+Q` and `Ctrl+B` between; type in a field of the settings (`Ctrl+,`) → Every character goes in once, where the caret was when it was typed; no Alt key types its letter; a paste goes in once; the committed Japanese goes in at the caret; the settings field takes what is typed and the document none of it 〔未訳〕
+- [ ] **8.23** With the Korean IME, type `한` and press `Space`, then `한` and `Enter`; with the Japanese IME, type にほん, convert and press `a` without committing first; with the IME off, select a word and type `Alt+0165` on the numpad (Num Lock on) → `한 ` goes in once, the composition showing at the caret with the candidate window by it until then; after `Enter` the syllable is in once; the Japanese goes in before the `a`; `¥` takes the place of the word and nothing is struck through 〔未訳〕
 
 ## 9. The external editor and key scripts
 
@@ -94,11 +96,14 @@
 
 ## 10. Formatting
 
-自動テスト済みなので下には出していない: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9, 10.10, 10.12
+自動テスト済みなので下には出していない: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9, 10.10, 10.12, 10.14
 
 - [ ] **10.11** Put the caret in a word and run "Toggle italic", "Toggle inline code" and "Toggle strikethrough" (each again to take it off); select a word and run "Toggle a link" → The word gets `*…*`, `` `…` `` and `~~…~~` with their colours; the link is `[word]()` with the caret between the parentheses, ready for the address 〔未訳〕
 - [ ] **10.13** On a JIS keyboard, with the IME off, select a word and press `Ctrl+B`, `Ctrl+I`, `Ctrl+Shift+@` and `Ctrl+K` (each but the link twice); press `Ctrl+2` twice on a line, `Ctrl+@` over two lines, `Ctrl+Shift+]` and `Ctrl+Shift+[` over two lines; then the same on a US keyboard with `` Ctrl+` `` and `Ctrl+[`; open the key help (`F1`) and the palette → Each key does what its command does in 10.1–10.11 (the second `Ctrl+2` makes the line a paragraph again) and types nothing; the key help and the palette list each key by its command 〔未訳〕
+- [ ] **10.15** On a JIS and on a US keyboard, with the IME off and then on, select two lines and press `Alt+Q`, `Alt+T` (each twice); select a word and press `Alt+Shift+5` (twice), then `Alt+5`; select tasks and press `Alt+X`, then `Alt+Shift+X`; open the key help (`F1`) and the palette → Each does what its command does in 10.4, 10.6, 10.7 and 10.11 and types nothing, with the IME on too; `Alt+5` does nothing; the window's menu does not open; the key help and the palette list each key by its command 〔未訳〕
 
-## 11. Structure commands — 全 9 件が自動
+## 11. Structure commands
 
-`cargo test` が全部見ているので、押すものはありません。
+自動テスト済みなので下には出していない: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7, 11.8, 11.9, 11.10, 11.12
+
+- [ ] **11.11** On a JIS and on a US keyboard, with the IME off and then on, do 11.2 with `Alt+W` and `Alt+Shift+W`, and 11.5's headings with `Alt+N`, `Alt+P` and `Alt+U`; open the key help (`F1`) and the palette → Each does what its command does in 11.2 and 11.5 and types no letter, with the IME on too; the window's menu does not open; the key help and the palette list each key by its command 〔未訳〕
