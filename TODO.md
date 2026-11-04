@@ -163,6 +163,10 @@
   設定の画面の行（ito-prefs）はまだ無いので、3 つの行を ito のセッションに頼んだ（2026-11-03、uchmk/ito#177。`ito_prefs::tabs_rows(ui, look, &mut ito_tabs::Settings) -> bool`、
   機能 `tabs`。値はアプリごとに weft の設定の書き手で保存し、common.toml には入れない）。ito の v0.234.0（4f40140）で入った
   （common.toml の言語に合わせるなら `tabs_rows_in(ui, look, TabsWords::of(lang), settings)`、設定の検索は `TABS_KEYS`・`tabs_index`。実機の `--keys` は ito では未確認）。
+  2026-11-05: 枝 `wt/tabs`（ca1539a から。ito は b0049a3）の未コミットの下ごしらえ（`[tabs]` の読み書き `prefs.rs`・設定の行 `settings.rs`・
+  タブのキー `defaults/keymap.toml`・コマンド名 `commands.rs`・`lang/*.toml`。+406/−94）は、タブの実体（`tabs.rs`・`App` への組み込み）が無く、
+  コマンドが何もしない半端な状態なので main には入れず、枝と作業ツリーを消した。差分は `C:\dev\_wip\weft-tabs-settings.patch`（main の afc0938 には ito の rev と
+  `prefs.rs` の差で素直には当たらない。タブを作るときに手で写す）。
 - [ ] 右に整形プレビュー（`ito-mdview`）、原文にミニマップ（`ito-minimap`）、目次（`ito-outline`）、位置の同期。
 - [ ] ガターの変更表示（`ito-diff`、変更の周りだけ計算）。
 - [ ] 検索と置換（`ito-match`、正規表現・あいまい）。
