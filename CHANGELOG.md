@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/)、日付は JST。
 
+## [0.2.11] - 2026-11-05
+
+### 変更
+
+- ito を v0.243.0 に上げ、エディターの色を ito-theme の役割（行番号 `gutter`・現在行の番号 `gutter_active`・キャレット `caret`・窓が非アクティブのキャレット `caret_idle`・見えない文字の印 `invisible`・IME の下線 `ime_underline`）に置き換えた。自前の `mix` による代用をやめた。
+  行番号が少し静かになり、変換中の下線がテーマの強調色になる。ハードブレークの金色は `warning`（役割名）に変えただけで、見た目は同じ。
+
 ## [0.2.10] - 2026-11-05
 
 ### 追加

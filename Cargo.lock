@@ -1641,24 +1641,24 @@ dependencies = [
 
 [[package]]
 name = "ito-a11y"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
 ]
 
 [[package]]
 name = "ito-bugreport"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "windows",
 ]
 
 [[package]]
 name = "ito-common"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "chrono",
  "egui",
@@ -1674,8 +1674,8 @@ dependencies = [
 
 [[package]]
 name = "ito-confirm"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
  "ito-diff",
@@ -1684,24 +1684,24 @@ dependencies = [
 
 [[package]]
 name = "ito-console"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "windows",
 ]
 
 [[package]]
 name = "ito-diff"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "similar",
 ]
 
 [[package]]
 name = "ito-fonts"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
  "ito-common",
@@ -1709,8 +1709,8 @@ dependencies = [
 
 [[package]]
 name = "ito-help"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
  "ito-keymap",
@@ -1718,8 +1718,8 @@ dependencies = [
 
 [[package]]
 name = "ito-i18n"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "ito-common",
  "toml",
@@ -1728,8 +1728,8 @@ dependencies = [
 
 [[package]]
 name = "ito-ime"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
  "windows",
@@ -1737,8 +1737,8 @@ dependencies = [
 
 [[package]]
 name = "ito-ipc"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "postcard",
  "serde",
@@ -1747,8 +1747,8 @@ dependencies = [
 
 [[package]]
 name = "ito-keymap"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "ito-common",
  "ito-keys",
@@ -1758,16 +1758,16 @@ dependencies = [
 
 [[package]]
 name = "ito-keys"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
 ]
 
 [[package]]
 name = "ito-keyscript"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
  "ito-a11y",
@@ -1778,8 +1778,8 @@ dependencies = [
 
 [[package]]
 name = "ito-mdedit"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "ito-outline",
  "pulldown-cmark",
@@ -1789,8 +1789,8 @@ dependencies = [
 
 [[package]]
 name = "ito-notices"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
  "ito-theme",
@@ -1798,8 +1798,8 @@ dependencies = [
 
 [[package]]
 name = "ito-notify"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "ito-secret",
  "png",
@@ -1808,8 +1808,8 @@ dependencies = [
 
 [[package]]
 name = "ito-openin"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "ito-common",
  "serde",
@@ -1818,8 +1818,8 @@ dependencies = [
 
 [[package]]
 name = "ito-outline"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "pulldown-cmark",
  "unicode-width",
@@ -1827,8 +1827,8 @@ dependencies = [
 
 [[package]]
 name = "ito-palette"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
  "ito-theme",
@@ -1836,8 +1836,8 @@ dependencies = [
 
 [[package]]
 name = "ito-prefs"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "chrono",
  "egui",
@@ -1857,8 +1857,8 @@ dependencies = [
 
 [[package]]
 name = "ito-secret"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "security-framework",
  "windows",
@@ -1866,16 +1866,16 @@ dependencies = [
 
 [[package]]
 name = "ito-select"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
 ]
 
 [[package]]
 name = "ito-statusbar"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "chrono",
  "egui",
@@ -1885,8 +1885,8 @@ dependencies = [
 
 [[package]]
 name = "ito-syntax"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "syntect",
  "two-face",
@@ -1894,8 +1894,8 @@ dependencies = [
 
 [[package]]
 name = "ito-tabs"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
  "ito-a11y",
@@ -1907,8 +1907,8 @@ dependencies = [
 
 [[package]]
 name = "ito-testcheck"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "serde",
  "toml",
@@ -1916,8 +1916,8 @@ dependencies = [
 
 [[package]]
 name = "ito-textbuf"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "ito-mdedit",
  "unicode-segmentation",
@@ -1925,8 +1925,8 @@ dependencies = [
 
 [[package]]
 name = "ito-theme"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
  "ito-select",
@@ -1935,8 +1935,8 @@ dependencies = [
 
 [[package]]
 name = "ito-titlebar"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "egui",
  "ito-theme",
@@ -1944,8 +1944,8 @@ dependencies = [
 
 [[package]]
 name = "ito-winres"
-version = "0.242.0"
-source = "git+https://github.com/uchmk/ito?rev=78ba28d0e250ec8fefdc2f3f6871e967815daa2e#78ba28d0e250ec8fefdc2f3f6871e967815daa2e"
+version = "0.243.0"
+source = "git+https://github.com/uchmk/ito?rev=05cda84e0d9448a363fd7067cb752dd035f4982d#05cda84e0d9448a363fd7067cb752dd035f4982d"
 dependencies = [
  "png",
 ]
@@ -4122,7 +4122,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "weft"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "eframe",
  "egui",

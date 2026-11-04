@@ -187,7 +187,7 @@ impl View {
         let y0 = text_rect.top() - (self.scroll.y - first as f32 * row_h);
         let count = (text_rect.height() / row_h).ceil() as usize + 1;
         let plain = TextFormat::simple(font.clone(), c.fg);
-        let ime_format = TextFormat { background: c.selection(), underline: Stroke::new(1.0, c.fg), ..plain.clone() };
+        let ime_format = TextFormat { background: c.selection(), underline: Stroke::new(1.0, c.ime_underline()), ..plain.clone() };
         let mut lines: Vec<Line> = Vec::with_capacity(count);
         let mut start = ed.line_range(first).map_or(text.len(), |r| r.start);
         for n in first..(first + count).min(total) {
@@ -251,7 +251,7 @@ impl View {
         let look = MarkColours::of(&c);
         for (i, l) in lines.iter().enumerate() {
             let y = y0 + i as f32 * row_h;
-            let number = if l.n == caret_line { c.fg } else { c.dim };
+            let number = if l.n == caret_line { c.gutter_active() } else { c.gutter() };
             gutter_painter.text(pos2(text_rect.left() - PAD, y), Align2::RIGHT_TOP, (l.n + 1).to_string(), font.clone(), number);
             let line = &text[l.start..l.end];
             let marks = marks(line, tree.and_then(|t| t.hard_break(l.n)));
@@ -300,7 +300,7 @@ impl View {
             if l.n == caret_line {
                 let x = origin_x + l.x(text, caret, true);
                 let bar = Rect::from_min_size(pos2(x - 1.0, y), vec2(2.0, row_h));
-                painter.rect_filled(bar, 0.0, if keys { c.fg } else { c.dim });
+                painter.rect_filled(bar, 0.0, if keys { c.caret() } else { c.caret_idle() });
                 let at = origin_x + l.x(text, caret, false);
                 self.caret_rect = Rect::from_min_size(pos2(at, y), vec2(2.0, row_h));
             }
@@ -410,7 +410,7 @@ struct MarkColours {
 
 impl MarkColours {
     fn of(c: &ito_theme::Colors) -> MarkColours {
-        MarkColours { wide: mix(c.dim, c.bg, 0.4), fill: mix(c.bg, c.wait, 0.12), dot: mix(c.wait, c.bg, 0.3) }
+        MarkColours { wide: c.invisible(), fill: mix(c.bg, c.warning(), 0.12), dot: mix(c.warning(), c.bg, 0.3) }
     }
 }
 
