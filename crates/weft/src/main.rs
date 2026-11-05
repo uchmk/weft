@@ -2453,6 +2453,31 @@ mod tests {
         out
     }
 
+    /// `cargo test -p weft --release -- --ignored --nocapture big_text_frames`
+    /// with `WEFT_BIG_MD=path`: how long a whole frame takes while typing at
+    /// the end of, and in the middle of, a big file (TODO.md, big files).
+    #[test]
+    #[ignore]
+    fn big_text_frames() {
+        let Ok(path) = std::env::var("WEFT_BIG_MD") else { return };
+        let text = std::fs::read_to_string(&path).unwrap();
+        for (label, at) in [("end", text.len()), ("middle", text.len() / 2)] {
+            let at = (0..=at).rev().find(|&i| text.is_char_boundary(i)).unwrap();
+            let (mut app, ctx) = typing_into(&text, at, at);
+            frame_with(&mut app, &ctx, vec![]);
+            let mut worst = std::time::Duration::ZERO;
+            let mut total = std::time::Duration::ZERO;
+            for _ in 0..30 {
+                let t = std::time::Instant::now();
+                frame_with(&mut app, &ctx, vec![Event::Text("x".to_owned())]);
+                let d = t.elapsed();
+                total += d;
+                worst = worst.max(d);
+            }
+            println!("{} KiB, typing at the {label}: mean {:?}, worst {:?}", text.len() / 1024, total / 30, worst);
+        }
+    }
+
     fn text_of(app: &App) -> &str {
         app.doc.editor.as_ref().unwrap().text()
     }
