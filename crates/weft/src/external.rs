@@ -80,6 +80,11 @@ impl App {
         while let Ok(dir) = self.dirwatch.rx.try_recv() {
             let hit: Vec<PathBuf> = self.docs().filter_map(Doc::path).filter(|p| p.parent() == Some(dir.as_path())).collect();
             for p in hit {
+                // A big file is read by line: what was appended is indexed, nothing is read back whole.
+                if let Some(b) = self.doc_mut(&p).and_then(|d| d.big.as_mut()) {
+                    b.changed();
+                    continue;
+                }
                 if !self.watch_wait.iter().any(|(w, _)| *w == p) {
                     self.watch_wait.push((p, Instant::now()));
                 }
@@ -110,7 +115,7 @@ impl App {
     /// UTF-8 (the window keeps what it has).
     pub(crate) fn disk_read(&mut self, path: PathBuf, raw: Option<String>) {
         let Some(raw) = raw else { return };
-        let Some(d) = self.doc_mut(&path) else { return };
+        let Some(d) = self.doc_mut(&path).filter(|d| d.big.is_none()) else { return };
         let Some(ed) = d.editor.as_mut() else { return };
         if raw == ed.disk() || d.declined.as_deref() == Some(raw.as_str()) {
             return;

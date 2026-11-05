@@ -1,6 +1,6 @@
 # Checklist
 
-184 checks in TESTING.md, 117 left for a person.
+190 checks in TESTING.md, 123 left for a person.
 
 ## 1. Start
 
@@ -226,3 +226,12 @@
 - [ ] **26.3** Press Alt+Shift+F again → All lines show again 〔未訳〕
 - [ ] **26.4** Put the caret before the first heading and turn it on → Only the preamble shows 〔未訳〕
 - [ ] **26.5** Look at it in the light and the dark theme → Same layout, line numbers keep their real values 〔未訳〕
+
+## 27. Big files (8 MiB and more)
+
+- [ ] **27.1** Make a file with `python scripts/make-big-md.py big.md 150000` and open it → It opens at once, read-only, with a notice that Ctrl+E edits it in your editor; the status bar shows "1 / N 行" and UTF-8 〔未訳〕
+- [ ] **27.2** Press PageDown, ↓, PageUp, then End and Home → The view moves by page and line; End shows a full last page 〔未訳〕
+- [ ] **27.3** Wheel, and click or drag on the bar at the right → The view follows; the thumb shows the place 〔未訳〕
+- [ ] **27.4** Press Ctrl+E after scrolling → Your editor opens the file at the line on top 〔未訳〕
+- [ ] **27.5** Append a line to the file from another program → The line count grows; no "reloaded" note 〔未訳〕
+- [ ] **27.6** Look at it in the light and the dark theme → The same layout; line numbers readable 〔未訳〕

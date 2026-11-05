@@ -333,3 +333,14 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 26.3 | Press Alt+Shift+F again | All lines show again |
 | 26.4 | Put the caret before the first heading and turn it on | Only the preamble shows |
 | 26.5 | Look at it in the light and the dark theme | Same layout, line numbers keep their real values |
+
+## 27. Big files (8 MiB and more)
+
+| # | Do | Expect |
+|---|---|---|
+| 27.1 | Make a file with `python scripts/make-big-md.py big.md 150000` and open it | It opens at once, read-only, with a notice that Ctrl+E edits it in your editor; the status bar shows "1 / N 行" and UTF-8 |
+| 27.2 | Press PageDown, ↓, PageUp, then End and Home | The view moves by page and line; End shows a full last page |
+| 27.3 | Wheel, and click or drag on the bar at the right | The view follows; the thumb shows the place |
+| 27.4 | Press Ctrl+E after scrolling | Your editor opens the file at the line on top |
+| 27.5 | Append a line to the file from another program | The line count grows; no "reloaded" note |
+| 27.6 | Look at it in the light and the dark theme | The same layout; line numbers readable |

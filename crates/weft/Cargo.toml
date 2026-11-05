@@ -81,6 +81,7 @@ ito-syntax = { git = "https://github.com/uchmk/ito", rev = "9735ed1" }
 # Japanese input: the preedit, the commits and the candidate window's place.
 ito-ime = { git = "https://github.com/uchmk/ito", rev = "9735ed1" }
 # The headings and their sections, and the options Markdown is read with in uchmk.
+ito-lineindex = { git = "https://github.com/uchmk/ito", rev = "9735ed1" }
 ito-outline = { git = "https://github.com/uchmk/ito", features = ["egui"], rev = "9735ed1" }
 # Lint: findings and their fixes as changes (structure, Japanese text).
 ito-mdlint = { git = "https://github.com/uchmk/ito", rev = "9735ed1" }

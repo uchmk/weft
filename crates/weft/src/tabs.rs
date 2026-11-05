@@ -36,6 +36,18 @@ impl App {
         Doc::new(move || ctx.request_repaint())
     }
 
+    /// A document of the file `path`: a big one is read by line (`big`), any other is loaded.
+    fn read_doc(&self, path: &Path) -> Result<Doc, String> {
+        let mut doc = self.new_doc();
+        if crate::big::is_big(path) {
+            doc.big = Some(crate::big::Big::open(path).map_err(|e| format!("{}: {e}", path.display()))?);
+            doc.editor = Some(engine::Editor::open_big(path));
+        } else {
+            doc.editor = Some(engine::Editor::open(path)?);
+        }
+        Ok(doc)
+    }
+
     /// The document of the tab `path` (the front one or a parked one).
     pub(crate) fn doc_mut(&mut self, path: &Path) -> Option<&mut Doc> {
         if self.doc.path().as_deref() == Some(path) {
@@ -114,9 +126,7 @@ impl App {
             if !id.is_file() {
                 continue;
             }
-            let Ok(ed) = engine::Editor::open(id) else { continue };
-            let mut doc = self.new_doc();
-            doc.editor = Some(ed);
+            let Ok(doc) = self.read_doc(id) else { continue };
             self.tabs.open(id.clone());
             self.parked.push((id.clone(), doc));
         }
@@ -146,14 +156,16 @@ impl App {
                 return;
             }
         }
-        match engine::Editor::open(&id) {
-            Ok(ed) => {
-                if ed.locked().is_some() {
+        match self.read_doc(&id) {
+            Ok(doc) => {
+                let ed = doc.editor.as_ref().expect("read_doc opens an editor");
+                if ed.locked() == Some(engine::Locked::Big) {
+                    let title = self.table.trf("file.big", &[&name]);
+                    self.outcome(ito_notices::Kind::Info, title, Some(id.clone()));
+                } else if ed.locked().is_some() {
                     let title = self.table.trf("file.locked", &[&name]);
                     self.outcome(ito_notices::Kind::Warn, title, Some(id.clone()));
                 }
-                let mut doc = self.new_doc();
-                doc.editor = Some(ed);
                 self.tabs.open_evicting(id);
                 self.install_front(doc);
                 self.reconcile();

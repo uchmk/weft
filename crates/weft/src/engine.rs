@@ -34,6 +34,8 @@ pub enum Locked {
     /// The file is not UTF-8: what is shown is a lossy reading, and saving it
     /// would destroy the bytes that did not decode.
     NotUtf8,
+    /// The file is big and is read by line, not loaded (`big`); the text here is empty.
+    Big,
 }
 
 /// What a save writes, taken on the UI thread and written on another.
@@ -188,6 +190,14 @@ impl Editor {
         ed.path = Some(path.to_path_buf());
         ed.locked = locked;
         Ok(ed)
+    }
+
+    /// A big file's place in a tab: no text, locked, so nothing is edited or saved over it.
+    pub fn open_big(path: &Path) -> Editor {
+        let mut ed = Editor::new("");
+        ed.path = Some(path.to_path_buf());
+        ed.locked = Some(Locked::Big);
+        ed
     }
 
     pub fn text(&self) -> &str {

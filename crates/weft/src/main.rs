@@ -13,6 +13,7 @@
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod big;
 mod changes;
 mod commands;
 mod count;
@@ -180,6 +181,8 @@ fn file_thread(ctx: egui::Context) -> (Sender<FileJob>, Receiver<FileDone>) {
 struct Doc {
     /// The editor, when a file is open.
     editor: Option<engine::Editor>,
+    /// A file of 8 MiB or more: the lines are read from the disk, and `editor` is empty and locked.
+    big: Option<big::Big>,
     view: view::View,
     /// The newest reading of the structure, and the thread that reads it.
     tree: Option<structure::Tree>,
@@ -209,6 +212,7 @@ impl Doc {
         let for_changes = wake.clone();
         Self {
             editor: None,
+            big: None,
             view: view::View::default(),
             tree: None,
             worker: structure::Worker::new(move || wake()),
@@ -916,7 +920,10 @@ impl App {
             self.outcome(ito_notices::Kind::Warn, title, None);
             return;
         };
-        let at = ed.editor_pos();
+        let at = match &self.doc.big {
+            Some(b) => ito_openin::Pos::new(b.line(), ito_openin::Col::new(1, 1)),
+            None => ed.editor_pos(),
+        };
         let job = ed.is_dirty().then(|| ed.save_job().ok()).flatten();
         if let Some(job) = job {
             if !self.send_file(FileJob::Save(job)) {
@@ -1368,8 +1375,16 @@ impl App {
         if let Some(ed) = &self.doc.editor {
             let t = &self.table;
             let (line, col) = ed.line_col();
-            left.push((t.trf("status.line_col", &[&(line + 1).to_string(), &(col + 1).to_string()]), c.fg));
-            let counted = ed.locked() != Some(engine::Locked::NotUtf8);
+            if let Some(b) = &self.doc.big {
+                let n = ito_common::text::grouped(b.count() as u64);
+                left.push((t.trf("status.big_lines", &[&ito_common::text::grouped(b.line() as u64), &n]), c.fg));
+                if b.progress() < 1.0 {
+                    left.push((t.trf("status.indexing", &[&((b.progress() * 100.0) as u32).to_string()]), c.wait));
+                }
+            } else {
+                left.push((t.trf("status.line_col", &[&(line + 1).to_string(), &(col + 1).to_string()]), c.fg));
+            }
+            let counted = ed.locked().is_none();
             let sel = ed.selection();
             if counted && !sel.is_empty() {
                 let reading = self.doc.tree.as_ref().filter(|tree| tree.version == ed.version()).map(|tree| &tree.counts);
@@ -1406,6 +1421,7 @@ impl App {
             }
             match ed.locked() {
                 Some(engine::Locked::NotUtf8) => right.push((t.tr("status.not_utf8").to_owned(), c.wait)),
+                Some(engine::Locked::Big) => right.push((self.doc.big.as_ref().map_or_else(String::new, big::Big::encoding), c.dim)),
                 None => right.push((t.tr("status.utf8").to_owned(), c.dim)),
             }
             if ed.bom() {
@@ -1716,12 +1732,20 @@ impl App {
                 // While the input method composes, its keys (Enter, the arrows) are its own.
                 self.doc.view.swallow(&ctx);
             }
+            let editing_big = self.editing() && self.doc.big.is_some();
+            if editing_big {
+                if let Some(b) = &mut self.doc.big {
+                    b.keys(&ctx);
+                }
+            }
             self.read_keys(&ctx);
             // A key may have opened the help or the settings.
             let editing = self.editing();
             self.find_sync();
             self.preview_pane(ui);
-            if let Some(ed) = &mut self.doc.editor {
+            if let Some(big) = self.doc.big.as_mut().filter(|_| self.doc.editor.is_some()) {
+                big.show(ui);
+            } else if let Some(ed) = &mut self.doc.editor {
                 if !editing {
                     ed.seal();
                 }
