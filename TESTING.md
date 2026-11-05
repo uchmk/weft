@@ -192,6 +192,7 @@ name from the palette (`Ctrl+Shift+P`), or bind one on the Keys page of the sett
 | 13.3 | Run `weft b.md` while weft is already running | The request reaches the running weft through its door |
 | 13.4 | Run `weft a.md` while a.md is already open | The tab for a.md comes forward; no duplicate tab |
 | 13.5 | Quit weft and run it again | The first weft owns the door again; a stale door file does not stop it |
+| 13.6 | Run `weft a.md b.md c.md` | Three tabs open; a.md is in front, and the caret of `+N` is in a.md |
 
 ## 14. Find and replace
 

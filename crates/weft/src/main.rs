@@ -58,11 +58,12 @@ const REPO: &str = "https://github.com/uchmk/weft";
 const USAGE: &str = "\
 weft — Markdown 専用エディター。キーだけで見出し・リスト・表などの構造を組み替え、日本語 IME に強く、フォルダー（vault）も扱う。kura の .md の opener
 
-usage: weft [+LINE[:COL]] [FILE] [--keys SCRIPT]
+usage: weft [+LINE[:COL]] [FILE [FILE...]] [--keys SCRIPT]
        weft --version | --help | env
 
   FILE           the Markdown file to edit (one that is not there yet is
-                 made when it is saved)
+                 made when it is saved); more FILEs open as
+                 tabs behind it
   +LINE[:COL]    start with the caret there, both from 1, the column in
                  characters (kura's opener passes it); before or after FILE.
                  Past the end is the last line, or the line's end. A FILE
@@ -1891,11 +1892,21 @@ fn file_arg(args: &[String]) -> Result<FileArg<'_>, String> {
     Ok((file, goto, args))
 }
 
+/// More files after the first (`weft a.md b.md`): each plain argument up to the
+/// first option. They open as tabs behind the first.
+fn more_files(args: &[String]) -> (Vec<PathBuf>, &[String]) {
+    let n = args.iter().take_while(|a| !a.starts_with('-') && !a.starts_with('+') && *a != "env").count();
+    (args[..n].iter().map(PathBuf::from).collect(), &args[n..])
+}
+
 fn main() -> eframe::Result {
     let all: Vec<String> = std::env::args().skip(1).collect();
     let done = std::env::var_os("WEFT_KEYS_DONE").filter(|v| !v.is_empty()).map(PathBuf::from);
-    let parsed = file_arg(&all).and_then(|(file, goto, args)| keys_arg(args).map(|script| (file, goto, args, script)));
-    let (file, goto, args, script) = match parsed {
+    let parsed = file_arg(&all).and_then(|(file, goto, args)| {
+        let (more, args) = if file.is_some() { more_files(args) } else { (Vec::new(), args) };
+        keys_arg(args).map(|script| (file, goto, more, args, script))
+    });
+    let (file, goto, more, args, script) = match parsed {
         Ok(p) => p,
         Err(e) => {
             // A run started detached never sees the message: the done file carries it (ito #193).
@@ -1927,7 +1938,7 @@ fn main() -> eframe::Result {
     let mut door = None;
     if script.is_none() && prefs::tabs_now(ito_common::base_dir().as_deref()).open_from_outside == ito_tabs::OpenFromOutside::NewTab {
         let cwd = std::env::current_dir().unwrap_or_default();
-        match door::acquire(&door::request(file.as_deref(), goto, &cwd), ctx_cell.clone()) {
+        match door::acquire(&door::request(file.as_deref(), goto, &more, &cwd), ctx_cell.clone()) {
             door::Door::Forwarded => return Ok(()),
             door::Door::Owner(o) => door = Some(o),
             door::Door::Closed => {}
@@ -1943,6 +1954,7 @@ fn main() -> eframe::Result {
     // The bar is the app's own (the Mac keeps its traffic lights over it).
     let viewport = ito_titlebar::frameless(viewport);
     let options = eframe::NativeOptions { viewport: saved.viewport(viewport), ..Default::default() };
+    let file_front = file.clone();
     eframe::run_native(
         "weft",
         options,
@@ -1955,6 +1967,13 @@ fn main() -> eframe::Result {
             let _ = ctx_cell.set(cc.egui_ctx.clone());
             let mut app = App::new(cc, &saved, script, file);
             app.door = door;
+            // The first file stays in front; the others wait behind it.
+            if let Some(first) = file_front.filter(|_| !more.is_empty()) {
+                for m in &more {
+                    app.open(m);
+                }
+                app.show_tab(&first);
+            }
             if let Some(g) = goto {
                 g.apply(&mut app);
             }
@@ -2011,6 +2030,16 @@ mod tests {
         goto.unwrap().apply(&mut app);
         assert!(app.report().contains("caret: 4:1\n"), "past the end is the last line: {}", app.report());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 9.7: Plain arguments after the first file are more files, up to the first option.
+    #[test]
+    fn plain_arguments_after_the_file_are_more_files() {
+        let v = strings(&["b.md", "c.md", "--keys", "j"]);
+        let (more, rest) = more_files(&v);
+        assert_eq!(more, vec![PathBuf::from("b.md"), PathBuf::from("c.md")]);
+        assert_eq!(rest, &v[2..]);
+        assert!(more_files(&strings(&["--version"])).0.is_empty());
     }
 
     /// 9.6: A bad `+LINE[:COL]` (`+`, `+0`, `+x`, `+3:`) is refused as any

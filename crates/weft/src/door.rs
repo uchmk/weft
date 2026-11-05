@@ -19,15 +19,14 @@ const PROTO: u32 = 1;
 
 /// What `weft [+LINE[:COL]] [FILE]` asks of the running window. A launch
 /// without a file asks only to come forward.
-pub(crate) fn request(file: Option<&Path>, goto: Option<Goto>, cwd: &Path) -> OpenRequest {
-    let files = file
-        .map(|f| FileArg {
-            path: cwd.join(f), // an absolute path replaces cwd
-            line: goto.and_then(|g| u32::try_from(g.line).ok()),
-            col: goto.and_then(|g| u32::try_from(g.col).ok()),
-        })
-        .into_iter()
-        .collect();
+pub(crate) fn request(file: Option<&Path>, goto: Option<Goto>, more: &[std::path::PathBuf], cwd: &Path) -> OpenRequest {
+    // The others first, so the file with the caret asked for ends in front.
+    let mut files: Vec<FileArg> = more.iter().map(|f| FileArg { path: cwd.join(f), line: None, col: None }).collect();
+    files.extend(file.map(|f| FileArg {
+        path: cwd.join(f), // an absolute path replaces cwd
+        line: goto.and_then(|g| u32::try_from(g.line).ok()),
+        col: goto.and_then(|g| u32::try_from(g.col).ok()),
+    }));
     OpenRequest { files, cwd: Some(cwd.to_path_buf()) }
 }
 
@@ -97,13 +96,35 @@ mod tests {
     #[test]
     fn the_request_names_the_file_and_where_to_look() {
         let cwd = std::env::temp_dir().join("weft-door-cwd");
-        let r = request(Some(Path::new("a.md")), Some(Goto { line: 3, col: 5 }), &cwd);
+        let r = request(Some(Path::new("a.md")), Some(Goto { line: 3, col: 5 }), &[], &cwd);
         assert_eq!(r.files, vec![FileArg { path: cwd.join("a.md"), line: Some(3), col: Some(5) }]);
         assert_eq!(r.cwd.as_deref(), Some(cwd.as_path()));
         let abs = std::env::temp_dir().join("b.md");
-        let r = request(Some(&abs), None, &cwd);
+        let r = request(Some(&abs), None, &[], &cwd);
         assert_eq!(r.files, vec![FileArg { path: abs, line: None, col: None }]);
-        assert!(request(None, None, &cwd).files.is_empty());
+        assert!(request(None, None, &[], &cwd).files.is_empty());
+    }
+
+    /// 13.6: `weft a.md b.md c.md`: the others go first in the request, so the
+    /// first file asked for ends in front.
+    #[test]
+    fn more_files_open_behind_the_first() {
+        let dir = std::env::temp_dir().join(format!("weft-door-more-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b, c) = (dir.join("a.md"), dir.join("b.md"), dir.join("c.md"));
+        for f in [&a, &b, &c] {
+            std::fs::write(
+                f, "x
+",
+            )
+            .unwrap();
+        }
+        let mut app = App::for_tests();
+        let ctx = egui::Context::default();
+        app.open_request(request(Some(&a), None, &[b.clone(), c.clone()], &dir), &ctx);
+        assert_eq!(app.tabs.len(), 3);
+        assert_eq!(app.tabs.front(), Some(&tab_id(&a)));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 13.2: A file that arrives opens as a tab beside the front one, with the
@@ -117,16 +138,16 @@ mod tests {
         std::fs::write(&b, "b\n").unwrap();
         let mut app = App::for_tests();
         let ctx = egui::Context::default();
-        app.open_request(request(Some(&a), None, &dir), &ctx);
-        app.open_request(request(Some(&b), None, &dir), &ctx);
+        app.open_request(request(Some(&a), None, &[], &dir), &ctx);
+        app.open_request(request(Some(&b), None, &[], &dir), &ctx);
         assert_eq!(app.tabs.len(), 2);
-        app.open_request(request(Some(&a), Some(Goto { line: 3, col: 2 }), &dir), &ctx);
+        app.open_request(request(Some(&a), Some(Goto { line: 3, col: 2 }), &[], &dir), &ctx);
         assert_eq!(app.tabs.len(), 2, "no second tab for a.md");
         assert_eq!(app.tabs.front(), Some(&tab_id(&a)));
         let ed = app.doc.editor.as_ref().unwrap();
         assert_eq!(ed.text()[..ed.caret()].matches('\n').count(), 2, "the caret is on line 3");
         // No file: nothing opens, nothing closes.
-        app.open_request(request(None, None, &dir), &ctx);
+        app.open_request(request(None, None, &[], &dir), &ctx);
         assert_eq!(app.tabs.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -141,10 +162,10 @@ mod tests {
         let at =
             if cfg!(windows) { format!(r"\\.\pipe\weft-door-test-{}", std::process::id()) } else { dir.join("sock").display().to_string() };
         std::env::set_var(name, &at);
-        let req = request(Some(Path::new("a.md")), None, &dir);
+        let req = request(Some(Path::new("a.md")), None, &[], &dir);
         let first = single::acquire("weft", name, PROTO, &req, || {}).unwrap();
         let Outcome::Owner(owner) = first else { panic!("the first owns the door") };
-        let again = request(Some(Path::new("b.md")), Some(Goto { line: 2, col: 1 }), &dir);
+        let again = request(Some(Path::new("b.md")), Some(Goto { line: 2, col: 1 }), &[], &dir);
         assert!(matches!(single::acquire("weft", name, PROTO, &again, || {}).unwrap(), Outcome::Forwarded));
         let got = owner.recv_timeout(std::time::Duration::from_secs(5)).expect("the owner is handed the request");
         assert_eq!(got, again);

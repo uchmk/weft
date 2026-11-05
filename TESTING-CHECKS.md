@@ -1,6 +1,6 @@
 # Checklist
 
-202 checks in TESTING.md, 135 left for a person.
+203 checks in TESTING.md, 134 left for a person.
 
 ## 1. Start
 
@@ -89,12 +89,11 @@
 
 ## 9. The external editor and key scripts
 
-自動テスト済みなので下には出していない: 9.4, 9.5, 9.6
+自動テスト済みなので下には出していない: 9.4, 9.5, 9.6, 9.7
 
 - [ ] **9.1** Put the caret on line 3, column 5 and press `Ctrl+E` (with changes not saved) → The file is saved first, then the editor `[open]` names opens it at line 3, column 5 (at the line only, for an editor that takes no column) 〔未訳〕
 - [ ] **9.2** Press `Ctrl+E` with an editor that does not exist in `[open]` → The bell says the external editor could not be opened 〔未訳〕
 - [ ] **9.3** Run `weft FILE.md --keys "<C-End>x<State:typed><Quit>"` with `WEFT_KEYS_DONE` set → The state `typed` says `file`, `dirty: true`, `locked: false`, `caret` (line:column), `section` (the heading the caret is under), `lines`, `chars` (the characters, line breaks left out), `selected_chars`, `text` and `quit: no` 〔未訳〕
-- [ ] **9.7** In kura, with weft as the `.md` opener, open a `.md` at a line (a heading in kura's outline; kura needs ito-openin at ceb61fd or later) → weft opens it with the caret on that line (and column, when kura passes one) 〔未訳〕
 
 ## 10. Formatting
 
@@ -117,7 +116,7 @@
 
 ## 13. A second launch
 
-自動テスト済みなので下には出していない: 13.1, 13.2, 13.3
+自動テスト済みなので下には出していない: 13.1, 13.2, 13.3, 13.6
 
 - [ ] **13.4** Run `weft a.md` while a.md is already open → The tab for a.md comes forward; no duplicate tab 〔未訳〕
 - [ ] **13.5** Quit weft and run it again → The first weft owns the door again; a stale door file does not stop it 〔未訳〕
