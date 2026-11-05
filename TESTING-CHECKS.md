@@ -1,6 +1,6 @@
 # Checklist
 
-213 checks in TESTING.md, 144 left for a person.
+214 checks in TESTING.md, 145 left for a person.
 
 ## 1. Start
 
@@ -274,3 +274,4 @@
 - [ ] **33.1** In a folder holding a `.weft` folder and a few `.md` files, run `weft main.md --keys "<Wait:400><C-End>[[買<Wait:500><Shot:c><CR><Wait:200><Shot:d><Quit>"` (also with `theme = "light"`) → c: a list under the caret with the matching note; d: the text is `[[買い物]]` with the caret after it 〔未訳〕
 - [ ] **33.2** Type `[[`, press Esc, keep typing → The list closes and stays closed until a new `[[` 〔未訳〕
 - [ ] **33.3** Type `[[` while the input method composes → No list; the confirm Enter is not a pick 〔未訳〕
+- [ ] **33.4** In a vault with `img/a.png`, run `weft p.md --keys "<Wait:400><C-End>![x](im<Wait:700><Shot:p><Quit>"` (also light) → p: a list of image paths (`img/a.png`); with `[x](` all files; Enter writes the path and `)` 〔未訳〕
