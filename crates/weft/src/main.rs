@@ -2588,6 +2588,20 @@ mod tests {
         out
     }
 
+    /// `cargo test -p weft --release -- --ignored --nocapture big_text_read`
+    /// with `WEFT_BIG_MD=path`: how long the structure worker's whole reading takes.
+    #[test]
+    #[ignore]
+    fn big_text_read() {
+        let Ok(path) = std::env::var("WEFT_BIG_MD") else { return };
+        let text = std::fs::read_to_string(&path).unwrap();
+        for _ in 0..3 {
+            let t = std::time::Instant::now();
+            let tree = crate::structure::read(1, &text);
+            eprintln!("read {} MiB: {:?} ({} headings)", text.len() >> 20, t.elapsed(), tree.headings.len());
+        }
+    }
+
     /// `cargo test -p weft --release -- --ignored --nocapture big_text_frames`
     /// with `WEFT_BIG_MD=path`: how long a whole frame takes while typing at
     /// the end of, and in the middle of, a big file (TODO.md, big files).
