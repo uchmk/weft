@@ -1,6 +1,6 @@
 # Checklist
 
-125 checks in TESTING.md, 64 left for a person.
+130 checks in TESTING.md, 69 left for a person.
 
 ## 1. Start
 
@@ -115,9 +115,12 @@
 - [ ] **12.1** Start `weft a.md`, then run `weft b.md` again from another terminal → The running window comes forward with b.md as a second tab; no second window opens 〔未訳〕
 - [ ] **12.2** Press `Ctrl+Tab`, `Ctrl+Shift+Tab`, `Alt+2`, and `Ctrl+W` on a tab with unsaved changes → The tab changes each time; `Ctrl+W` asks to save, discard or cancel before closing 〔未訳〕
 
-## 13. A second launch — 全 3 件が自動
+## 13. A second launch
 
-`cargo test` が全部見ているので、押すものはありません。
+自動テスト済みなので下には出していない: 13.1, 13.2, 13.3
+
+- [ ] **13.4** Run `weft a.md` while a.md is already open → The tab for a.md comes forward; no duplicate tab 〔未訳〕
+- [ ] **13.5** Quit weft and run it again → The first weft owns the door again; a stale door file does not stop it 〔未訳〕
 
 ## 14. Find and replace
 
@@ -130,3 +133,6 @@
 - [ ] **14.12** Open two files as tabs, search in one, switch to the other and back → Each tab shows its own count and highlights; the bar's query stays 〔未訳〕
 - [ ] **14.13** Replace all in a CRLF file with a BOM, save, and look at the file → The line endings and the BOM are as they were 〔未訳〕
 - [ ] **14.14** Look at the bar in the light and the dark theme, in a narrow window and with a long query → The bar uses the theme's colours, nothing overlaps, the buttons are the shared ones with the focus ring 〔未訳〕
+- [ ] **14.15** In a document where a word occurs several times, press `Ctrl+H`, type the word and a replacement, press `Ctrl+Alt+Enter`, then `Ctrl+Z` once → Every place is replaced and the status bar says how many; one `Ctrl+Z` brings all of them back 〔未訳〕
+- [ ] **14.16** With a match selected, press `Enter` in the Replace field repeatedly → Each press replaces that match and moves to the next one 〔未訳〕
+- [ ] **14.17** Type a long query one letter at a time in a large file → Typing never waits; the count and the highlights follow the newest query 〔未訳〕

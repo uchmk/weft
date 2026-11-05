@@ -187,9 +187,11 @@ name from the palette (`Ctrl+Shift+P`), or bind one on the Keys page of the sett
 
 | # | Do | Expect |
 |---|---|---|
-| 13.1 | Run `weft sub\c.md` from a folder while weft is already running | c.md opens as a tab by its full path, not the path relative to the running window's folder |
-| 13.2 | Run `weft a.md` while a.md is already open | The tab for a.md comes forward; no duplicate tab |
-| 13.3 | Quit weft and run it again | The first weft owns the door again; a stale door file does not stop it |
+| 13.1 | Run `weft sub\c.md` from a folder while weft is already running | The request is the file made absolute against where it was run, so c.md opens by its full path |
+| 13.2 | Run `weft b.md` while weft is already running | b.md arrives as a tab beside the front one |
+| 13.3 | Run `weft b.md` while weft is already running | The request reaches the running weft through its door |
+| 13.4 | Run `weft a.md` while a.md is already open | The tab for a.md comes forward; no duplicate tab |
+| 13.5 | Quit weft and run it again | The first weft owns the door again; a stale door file does not stop it |
 
 ## 14. Find and replace
 
@@ -198,12 +200,12 @@ In the bar `Enter` goes to the next match, `Shift+Enter` to the previous, `Enter
 
 | # | Do | Expect |
 |---|---|---|
-| 14.1 | In a document where a word occurs several times, press `Ctrl+H`, type the word and a replacement, press `Ctrl+Alt+Enter`, then `Ctrl+Z` once | Every place is replaced and the status bar says how many; one `Ctrl+Z` brings all of them back |
+| 14.1 | Replace all with a regex and `$1` in the replacement | Every place is replaced; one undo brings all of them back |
 | 14.2 | Select two lines, turn on "In selection", search for a word that is also outside them, and replace all | Only the selected lines change |
 | 14.3 | Open a Shift_JIS file, press `Ctrl+H` and replace all | Nothing changes; the bar says the file cannot be changed |
 | 14.4 | Press `F3` past the last match, `Shift+F3` before the first | The step wraps round to the other end |
-| 14.5 | With a match selected, press `Enter` in the Replace field repeatedly | Each press replaces that match and moves to the next one |
-| 14.6 | Type a long query one letter at a time in a large file | Typing never waits; the count and the highlights follow the newest query |
+| 14.5 | Replace the match the selection is on | The replacement goes in and the next match is selected |
+| 14.6 | An old result arrives after a newer query | It is not the one shown |
 | 14.7 | Turn on "Regular expression" and type `(` | The bar says why it is not a pattern; replace does nothing |
 | 14.8 | Press `Ctrl+F`, type a word | Every match is tinted in the text and the one at the caret is tinted stronger; the bar shows "i / n", or "No results" |
 | 14.9 | Press `Ctrl+F` with a word selected; press `Esc` | The word is in the field; `Esc` closes the bar and the highlights go |
@@ -212,3 +214,6 @@ In the bar `Enter` goes to the next match, `Shift+Enter` to the previous, `Enter
 | 14.12 | Open two files as tabs, search in one, switch to the other and back | Each tab shows its own count and highlights; the bar's query stays |
 | 14.13 | Replace all in a CRLF file with a BOM, save, and look at the file | The line endings and the BOM are as they were |
 | 14.14 | Look at the bar in the light and the dark theme, in a narrow window and with a long query | The bar uses the theme's colours, nothing overlaps, the buttons are the shared ones with the focus ring |
+| 14.15 | In a document where a word occurs several times, press `Ctrl+H`, type the word and a replacement, press `Ctrl+Alt+Enter`, then `Ctrl+Z` once | Every place is replaced and the status bar says how many; one `Ctrl+Z` brings all of them back |
+| 14.16 | With a match selected, press `Enter` in the Replace field repeatedly | Each press replaces that match and moves to the next one |
+| 14.17 | Type a long query one letter at a time in a large file | Typing never waits; the count and the highlights follow the newest query |
