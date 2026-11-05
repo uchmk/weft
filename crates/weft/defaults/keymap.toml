@@ -136,6 +136,11 @@ run = "view.toggle_preview"
 desc = "Toggle the preview"
 
 [[app.keymap]]
+on = "<A-S-v>"
+run = "edit.paste_image"
+desc = "Paste the clipboard picture"
+
+[[app.keymap]]
 on = "<A-z>"
 run = "view.toggle_wrap"
 desc = "Toggle word wrap"

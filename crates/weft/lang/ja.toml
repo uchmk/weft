@@ -50,6 +50,7 @@ fixed = "{} は weft が先に読むので、ここに割り当てても動き�
 "Go to tab 9" = "9 番目のタブへ"
 "Toggle the preview" = "プレビューの表示を切り替える"
 "Toggle word wrap" = "折り返しを切り替える"
+"Paste the clipboard picture" = "クリップボードの画像を貼り付ける"
 "Find" = "検索"
 "Find and replace" = "検索と置換"
 "Next match" = "次の一致へ"
@@ -190,6 +191,13 @@ counts = "+{0} / -{1} 行（+ はファイル、- は窓）"
 keep = "自分の文章を残す"
 load = "ファイルを読む（Ctrl+Z で戻せる）"
 reloaded = "{0} がほかのプログラムで書き換えられたので、読み直しました"
+
+[image]
+# {0} リンクに書いたパス。
+pasted = "画像を {0} に保存しました"
+none = "クリップボードに画像がありません"
+# {0} 理由。
+failed = "画像を保存できませんでした: {0}"
 
 [recover]
 title = "保存されていない文章があります"

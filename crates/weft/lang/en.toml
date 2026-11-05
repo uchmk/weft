@@ -55,6 +55,7 @@ fixed = "weft reads {} itself: bound here, it never runs."
 "Go to tab 9" = "Go to tab 9"
 "Toggle the preview" = "Toggle the preview"
 "Toggle word wrap" = "Toggle word wrap"
+"Paste the clipboard picture" = "Paste the clipboard picture"
 "Find" = "Find"
 "Find and replace" = "Find and replace"
 "Next match" = "Next match"
@@ -195,6 +196,14 @@ counts = "+{0} / -{1} lines (+ the file's, - the window's)"
 keep = "Keep my text"
 load = "Load the file (Ctrl+Z undoes)"
 reloaded = "{0} was changed by another program: reloaded"
+
+# Pasting a picture from the clipboard.
+[image]
+# {0} the path written in the link.
+pasted = "Picture saved as {0}"
+none = "The clipboard has no picture"
+# {0} the reason.
+failed = "Could not save the picture: {0}"
 
 # Text a run that did not exit cleanly had not saved.
 [recover]

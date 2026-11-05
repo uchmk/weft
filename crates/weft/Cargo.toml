@@ -59,6 +59,8 @@ ito-notices = { git = "https://github.com/uchmk/ito", rev = "b7934050e9769f380b9
 ito-palette = { git = "https://github.com/uchmk/ito", rev = "b7934050e9769f380b91e21ec8416866598c95bb" }
 # `weft.com` and the answers `out` and `err` write.
 ito-console = { git = "https://github.com/uchmk/ito", rev = "b7934050e9769f380b91e21ec8416866598c95bb" }
+# Pictures: the clipboard's picture, lossy WebP (image paste).
+ito-image = { git = "https://github.com/uchmk/ito", rev = "b7934050e9769f380b91e21ec8416866598c95bb" }
 # The settings' "open the file / folder", and `$EDITOR` at the caret (Ctrl+E).
 ito-openin = { git = "https://github.com/uchmk/ito", rev = "b7934050e9769f380b91e21ec8416866598c95bb" }
 # The monospace face common.toml names (mono_font), with the Japanese one behind it.

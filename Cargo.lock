@@ -199,7 +199,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
  "x11rb",
 ]
 
@@ -415,6 +415,12 @@ name = "base64"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
+
+[[package]]
+name = "bin-rs"
+version = "0.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23f756521115a60a84bc45722261eaf03aa6a59d886c9c3b41d08ac1c39e3e24"
 
 [[package]]
 name = "bincode"
@@ -1056,7 +1062,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1768,6 +1774,18 @@ dependencies = [
  "ito-common",
  "toml",
  "toml_edit",
+]
+
+[[package]]
+name = "ito-image"
+version = "0.249.0"
+source = "git+https://github.com/uchmk/ito?rev=b7934050e9769f380b91e21ec8416866598c95bb#b7934050e9769f380b91e21ec8416866598c95bb"
+dependencies = [
+ "arboard",
+ "oxideav-webp",
+ "png",
+ "webp-rust",
+ "windows",
 ]
 
 [[package]]
@@ -2810,6 +2828,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxideav-vp8"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "506f2495a728488c2fee1ee54bc7f819ca934dc3246369b4100c83848f057852"
+
+[[package]]
+name = "oxideav-webp"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f165f68743f086d7349770ed9e9ae5a9acc622a87fc44fe5af5f892f74abf556"
+dependencies = [
+ "oxideav-vp8",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3267,7 +3300,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3662,7 +3695,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4270,6 +4303,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "webp-rust"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50c858a3ae7a705e41370c569e3317b5e85b167700dc77b3c14e71a9ed077f71"
+dependencies = [
+ "bin-rs",
+]
+
+[[package]]
 name = "weezl"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4277,7 +4319,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "weft"
-version = "0.2.23"
+version = "0.2.24"
 dependencies = [
  "eframe",
  "egui",
@@ -4291,6 +4333,7 @@ dependencies = [
  "ito-fonts",
  "ito-help",
  "ito-i18n",
+ "ito-image",
  "ito-ime",
  "ito-ipc",
  "ito-keymap",
@@ -4509,7 +4552,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

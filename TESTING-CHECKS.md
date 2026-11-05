@@ -1,6 +1,6 @@
 # Checklist
 
-161 checks in TESTING.md, 94 left for a person.
+166 checks in TESTING.md, 99 left for a person.
 
 ## 1. Start
 
@@ -188,3 +188,11 @@
 - [ ] **21.2** Start weft again → A box lists the file; Enter brings the text back as unsaved changes (Ctrl+Z returns the file's text), Esc leaves it 〔未訳〕
 - [ ] **21.3** Quit normally (even choosing not to save) → `recovery.toml` is empty; the next start asks nothing 〔未訳〕
 - [ ] **21.4** Save the file, wait 3 seconds → The file is no longer in `recovery.toml` 〔未訳〕
+
+## 22. Image paste
+
+- [ ] **22.1** Copy a picture (Win+Shift+S), press Alt+Shift+V in a saved note → `assets/<date>-<n>.webp` appears next to the note and `![](assets/…)` is at the caret; the status line says so 〔未訳〕
+- [ ] **22.2** Press Alt+Shift+V again with the same picture → The same file is linked; no second file 〔未訳〕
+- [ ] **22.3** Press Ctrl+Z → The link is gone in one step 〔未訳〕
+- [ ] **22.4** Copy text only, press Alt+Shift+V → A notice: the clipboard has no picture 〔未訳〕
+- [ ] **22.5** In a note without a file, press Alt+Shift+V → A notice that the document has no file yet 〔未訳〕

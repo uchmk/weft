@@ -24,6 +24,7 @@ mod find;
 mod help;
 mod i18n;
 mod icon;
+mod image;
 mod keymap;
 mod notify;
 mod prefs;
@@ -94,6 +95,11 @@ enum FileJob {
         path: PathBuf,
         at: ito_openin::Pos,
     },
+    /// The clipboard's picture, stored next to the note (src/image.rs).
+    PasteImage {
+        path: PathBuf,
+        stamp: String,
+    },
 }
 
 /// What came back from the file thread.
@@ -111,6 +117,11 @@ enum FileDone {
         raw: Option<String>,
     },
     OpenFailed(String),
+    /// The picture stored: the link's path, `None` when the clipboard had none.
+    Image {
+        path: PathBuf,
+        result: Result<Option<String>, String>,
+    },
 }
 
 /// The thread that writes the files and starts `$EDITOR`, off the UI thread
@@ -130,6 +141,10 @@ fn file_thread(ctx: egui::Context) -> (Sender<FileJob>, Receiver<FileDone>) {
                 FileJob::Check { path } => {
                     let raw = std::fs::read(&path).ok().and_then(|b| String::from_utf8(b).ok());
                     FileDone::Disk { path, raw }
+                }
+                FileJob::PasteImage { path, stamp } => {
+                    let result = image::paste_job(&path, &stamp);
+                    FileDone::Image { path, result }
                 }
                 FileJob::Open { cfg, path, at } => {
                     // The failed save was told of already.
@@ -800,6 +815,7 @@ impl App {
             "help" => self.help.toggle(),
             "file.save" => self.save(),
             "file.open_in_editor" => self.open_in_editor(),
+            "edit.paste_image" => self.paste_image(),
             "view.toggle_wrap" => self.wrap_toggle(ctx),
             "view.toggle_preview" => self.preview_toggle(ctx),
             _ if ito_tabs::command(name).is_some() => {
@@ -906,6 +922,7 @@ impl App {
         while let Ok(d) = self.done.try_recv() {
             match d {
                 FileDone::Disk { path, raw } => self.disk_read(path, raw),
+                FileDone::Image { path, result } => self.image_done(path, result),
                 FileDone::Saved { version, path, result, bytes } => {
                     // The save belongs to the tab of that file, in front or not.
                     if let Some(d) = self.doc_mut(&path) {
