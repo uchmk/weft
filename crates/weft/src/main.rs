@@ -28,6 +28,8 @@ mod help;
 mod i18n;
 mod icon;
 mod image;
+#[allow(dead_code)] // the index waits for backlinks and the vault search
+mod index;
 mod keymap;
 mod lint;
 mod notify;

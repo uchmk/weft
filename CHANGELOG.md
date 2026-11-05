@@ -2,6 +2,16 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/)、日付は JST。
 
+## [0.2.46] - 2026-11-06
+
+### 追加
+
+- vault の索引の土台（`index.rs`。画面にはまだ出ない）。ノートの見出し・`[[リンク]]`・全文を SQLite（`ito-store`、FTS5 trigram で日本語も検索できる）に持つ。時刻かサイズが変わったノートだけ読み直し、消えたものは落とす。バックリンクと全文検索の問い合わせを備える。1 万ノートで、初回 1.4 秒・変更なしの再同期 0.16 秒・検索 17 ms（release、`cargo test --release -p weft --bin weft index_ten_thousand -- --ignored --nocapture`）。
+
+### 変更
+
+- ito を v0.259.0（63a07b9）に上げた（文字サイズの役割への置き換え。確認の箱の文字が 14 → 13）。
+
 ## [0.2.45] - 2026-11-05
 
 ### 追加
