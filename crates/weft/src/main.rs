@@ -27,6 +27,7 @@ mod i18n;
 mod icon;
 mod image;
 mod keymap;
+mod lint;
 mod notify;
 mod prefs;
 mod preview;
@@ -831,6 +832,7 @@ impl App {
                 }
             }
             "heading.fold" | "heading.fold_all" | "heading.unfold_all" => self.fold_command(name),
+            "lint.next" | "lint.prev" | "lint.fix_all" => self.lint_command(name),
             ito_find::cmd::OPEN
             | ito_find::cmd::REPLACE_OPEN
             | ito_find::cmd::NEXT
@@ -1094,6 +1096,34 @@ impl App {
             _ => doc.view.folds.set_all(tree, false),
         }
         doc.view.follow = true;
+    }
+
+    /// `lint.next` and `lint.prev` (the caret goes to the finding, whose kind
+    /// the status line says) and `lint.fix_all` (one undo step). The findings
+    /// are worked out from the text as it is, not taken from the newest reading.
+    fn lint_command(&mut self, name: &str) {
+        if !self.editing() {
+            return;
+        }
+        let Some(ed) = self.doc.editor.as_mut() else { return };
+        let findings = lint::run(ed.text());
+        let note = if name == "lint.fix_all" {
+            let n = findings.iter().filter(|f| f.fix.is_some()).count();
+            if n > 0 && ed.structure(|t, _| ito_mdlint::fix_all(t, &findings, None)) {
+                self.table.trf("lint.fixed", &[&n.to_string()])
+            } else {
+                self.table.tr("lint.nofix").to_owned()
+            }
+        } else if let Some(f) = lint::step(&findings, ed.caret(), name == "lint.next") {
+            ed.set_caret(f.range.start, false);
+            self.doc.view.follow = true;
+            let what = self.table.tr(&lint::key(f.kind)).to_owned();
+            self.table.trf("lint.found", &[&what, &findings.len().to_string()])
+        } else {
+            self.table.tr("lint.none").to_owned()
+        };
+        self.announce(note.clone());
+        self.note = Some(note);
     }
 
     /// The title of the section the caret is in, by the newest reading.
@@ -2208,7 +2238,16 @@ mod tests {
             let ed = app.doc.editor.as_ref().unwrap();
             let counts = count::Index::new(ed.text());
             let (version, chars) = (ed.version(), counts.total());
-            structure::Tree { version, headings: Vec::new(), lines: Vec::new(), rows: Vec::new(), breaks: Vec::new(), chars, counts }
+            structure::Tree {
+                version,
+                headings: Vec::new(),
+                lines: Vec::new(),
+                rows: Vec::new(),
+                breaks: Vec::new(),
+                chars,
+                counts,
+                lint: Vec::new(),
+            }
         };
         let near = 2 * (count::STEP + 64);
         let mut app = App::for_tests();

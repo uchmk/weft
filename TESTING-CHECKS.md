@@ -1,6 +1,6 @@
 # Checklist
 
-173 checks in TESTING.md, 106 left for a person.
+178 checks in TESTING.md, 111 left for a person.
 
 ## 1. Start
 
@@ -209,3 +209,11 @@
 - [ ] **24.3** Fold a section, then press Down from its heading → The fold opens and the caret is on the next line 〔未訳〕
 - [ ] **24.4** Fold a section, add a heading above it → The section stays folded 〔未訳〕
 - [ ] **24.5** Run "Fold all sections" and then "Unfold all sections" from the palette → Every section folds (the top-level headings show) and then all open 〔未訳〕
+
+## 25. Lint
+
+- [ ] **25.1** Open a note with a skipped heading level (`#` then `###`), a table row with too few cells and an unclosed ``` fence → Each is underlined: the heading with a thin line, the table row and the fence with a thick one 〔未訳〕
+- [ ] **25.2** Press F8 → The caret goes to the next finding and the status line names it with the total; at the last one it wraps to the first 〔未訳〕
+- [ ] **25.3** Press Shift+F8 → The caret goes to the previous finding 〔未訳〕
+- [ ] **25.4** Run "Fix all lint findings" from the palette, then Ctrl+Z once → The fixable ones are mended together; one undo restores the text 〔未訳〕
+- [ ] **25.5** Look at it in the light and the dark theme → The underlines read in both 〔未訳〕

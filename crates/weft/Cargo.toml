@@ -82,6 +82,8 @@ ito-syntax = { git = "https://github.com/uchmk/ito", rev = "10869ca7b73c710031f0
 ito-ime = { git = "https://github.com/uchmk/ito", rev = "10869ca7b73c710031f0df6019b1cd5f7c91866d" }
 # The headings and their sections, and the options Markdown is read with in uchmk.
 ito-outline = { git = "https://github.com/uchmk/ito", features = ["egui"], rev = "10869ca7b73c710031f0df6019b1cd5f7c91866d" }
+# Lint: findings and their fixes as changes (structure, Japanese text).
+ito-mdlint = { git = "https://github.com/uchmk/ito", rev = "10869ca7b73c710031f0df6019b1cd5f7c91866d" }
 # The structure tree and the colours, read with ito-outline's options (worker thread only).
 pulldown-cmark = { version = "0.13", default-features = false }
 # config.toml's [notify] (the settings' Notifications page).

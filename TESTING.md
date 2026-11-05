@@ -312,3 +312,13 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 24.3 | Fold a section, then press Down from its heading | The fold opens and the caret is on the next line |
 | 24.4 | Fold a section, add a heading above it | The section stays folded |
 | 24.5 | Run "Fold all sections" and then "Unfold all sections" from the palette | Every section folds (the top-level headings show) and then all open |
+
+## 25. Lint
+
+| # | Do | Expect |
+|---|---|---|
+| 25.1 | Open a note with a skipped heading level (`#` then `###`), a table row with too few cells and an unclosed ``` fence | Each is underlined: the heading with a thin line, the table row and the fence with a thick one |
+| 25.2 | Press F8 | The caret goes to the next finding and the status line names it with the total; at the last one it wraps to the first |
+| 25.3 | Press Shift+F8 | The caret goes to the previous finding |
+| 25.4 | Run "Fix all lint findings" from the palette, then Ctrl+Z once | The fixable ones are mended together; one undo restores the text |
+| 25.5 | Look at it in the light and the dark theme | The underlines read in both |

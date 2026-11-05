@@ -199,7 +199,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
  "x11rb",
 ]
 
@@ -1062,7 +1062,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1855,6 +1855,14 @@ dependencies = [
  "pulldown-cmark",
  "unicode-segmentation",
  "unicode-width",
+]
+
+[[package]]
+name = "ito-mdlint"
+version = "0.250.0"
+source = "git+https://github.com/uchmk/ito?rev=10869ca7b73c710031f0df6019b1cd5f7c91866d#10869ca7b73c710031f0df6019b1cd5f7c91866d"
+dependencies = [
+ "ito-mdedit",
 ]
 
 [[package]]
@@ -3300,7 +3308,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3695,7 +3703,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4319,7 +4327,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "weft"
-version = "0.2.30"
+version = "0.2.31"
 dependencies = [
  "eframe",
  "egui",
@@ -4341,6 +4349,7 @@ dependencies = [
  "ito-keyscript",
  "ito-match",
  "ito-mdedit",
+ "ito-mdlint",
  "ito-mdview",
  "ito-minimap",
  "ito-notices",
@@ -4552,7 +4561,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

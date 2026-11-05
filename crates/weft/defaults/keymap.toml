@@ -176,6 +176,16 @@ run = "heading.fold"
 desc = "Fold or unfold this section"
 
 [[app.keymap]]
+on = "<F8>"
+run = "lint.next"
+desc = "Next lint finding"
+
+[[app.keymap]]
+on = "<S-F8>"
+run = "lint.prev"
+desc = "Previous lint finding"
+
+[[app.keymap]]
 on = "<C-A-Enter>"
 run = "replace.all"
 desc = "Replace all"

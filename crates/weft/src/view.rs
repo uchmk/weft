@@ -492,6 +492,27 @@ impl View {
                 }
             }
             painter.galley(pos2(origin_x, y), l.galley.clone(), c.fg);
+            // Lint findings: a thin line under a warning, a thick one under an error (not by colour alone).
+            if let Some(t) = tree {
+                for f in &t.lint[t.lint.partition_point(|f| f.range.end < l.start)..] {
+                    if f.range.start > l.end {
+                        break;
+                    }
+                    let (s, e) = (f.range.start.clamp(l.start, l.end), f.range.end.clamp(l.start, l.end));
+                    // The reading can be a version behind the text: a range off a character boundary is skipped.
+                    if !text.is_char_boundary(s) || !text.is_char_boundary(e) {
+                        continue;
+                    }
+                    let error = f.severity == ito_mdlint::Severity::Error;
+                    let stroke = if error { Stroke::new(2.0, c.diff_removed()) } else { Stroke::new(1.0, c.warning()) };
+                    // An empty finding (a missing line) still gets a short mark.
+                    for b in l.bands(l.ch(text, s, false), l.ch(text, e.max(s), false)) {
+                        let (x0, x1) = (origin_x + b.1, origin_x + b.2.max(b.1 + char_w / 2.0));
+                        let yy = y + b.0 + row_h - 1.0;
+                        painter.line_segment([pos2(x0, yy), pos2(x1, yy)], stroke);
+                    }
+                }
+            }
             if let Some(n) = self.folds.hides(l.n) {
                 let x = origin_x + l.galley.size().x + char_w;
                 painter.text(pos2(x, y), Align2::LEFT_TOP, format!("… {n}"), font.clone(), c.gutter());

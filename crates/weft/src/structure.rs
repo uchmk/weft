@@ -85,6 +85,8 @@ pub struct Tree {
     /// Where the count stands through the text, so a selection of this
     /// version is counted without walking it on the UI thread.
     pub counts: crate::count::Index,
+    /// The lint findings to show (warnings and errors), by position.
+    pub lint: Vec<ito_mdlint::Finding>,
 }
 
 impl Tree {
@@ -101,7 +103,16 @@ pub fn read(version: u64, text: &str) -> Tree {
     let counts = crate::count::Index::new(text);
     let lines = lines(text, &kinds);
     let rows = minimap_rows(text, &lines);
-    Tree { version, headings: ito_outline::headings(text, 6), rows, lines, breaks: by_line(text, &breaks), chars: counts.total(), counts }
+    Tree {
+        version,
+        headings: ito_outline::headings(text, 6),
+        rows,
+        lines,
+        breaks: by_line(text, &breaks),
+        chars: counts.total(),
+        counts,
+        lint: crate::lint::run(text),
+    }
 }
 
 fn fill(kinds: &mut [Option<Kind>], r: Range<usize>, k: Option<Kind>) {
