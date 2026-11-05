@@ -131,6 +131,131 @@ pub fn suggest<'a>(notes: &'a [String], query: &str, limit: usize) -> Vec<&'a st
     hits.into_iter().take(limit).map(|(_, n)| n).collect()
 }
 
+/// Where a `[[` completion stands: the byte where the typed name starts, and
+/// the name typed so far. `None` when the caret is not inside an open `[[`
+/// (a `]]`, `[`, `|` or `#` between them ends it, and so does the line end).
+pub fn trigger(text: &str, caret: usize) -> Option<(usize, &str)> {
+    let head = text.get(..caret)?;
+    let line = head.rfind('\n').map_or(0, |i| i + 1);
+    let seg = &head[line..];
+    let open = seg.rfind("[[")?;
+    let q = &seg[open + 2..];
+    if q.contains([']', '[', '|', '#']) {
+        return None;
+    }
+    Some((line + open + 2, q))
+}
+
+/// What a pick writes: the bare name when no other note shares it, else the
+/// path (both without `.md`).
+pub fn link_name(notes: &[String], pick: &str) -> String {
+    let path = pick.trim_end_matches(".md");
+    let stem = path.rsplit('/').next().unwrap_or(path);
+    let same = notes.iter().filter(|n| n.trim_end_matches(".md").rsplit('/').next().is_some_and(|s| s.eq_ignore_ascii_case(stem))).count();
+    if same > 1 {
+        path.to_string()
+    } else {
+        stem.to_string()
+    }
+}
+
+/// The `[[` completion: the notes of the vault (scanned on a worker, never
+/// on the typing path) and the popup state.
+#[derive(Default)]
+pub struct Completion {
+    root: Option<PathBuf>,
+    notes: Vec<String>,
+    scanned: Option<std::time::Instant>,
+    rx: Option<std::sync::mpsc::Receiver<(PathBuf, Vec<String>)>>,
+    view: ito_palette::InlineView,
+    /// The `[[` the user closed with Esc: it stays closed until a new one.
+    dismissed: Option<usize>,
+    last_query: String,
+}
+
+impl Completion {
+    fn refresh(&mut self, ctx: &egui::Context, file: &Path) {
+        if let Some(rx) = &self.rx {
+            match rx.try_recv() {
+                Ok((root, notes)) => {
+                    if self.root.as_deref() == Some(root.as_path()) {
+                        self.notes = notes;
+                    }
+                    self.scanned = Some(std::time::Instant::now());
+                    self.rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => return,
+                Err(_) => self.rx = None,
+            }
+        }
+        let root = root_of(file);
+        let stale = self.scanned.is_none_or(|t| t.elapsed().as_secs() >= 5);
+        if self.root.as_deref() != Some(root.as_path()) {
+            self.notes.clear();
+        } else if !stale {
+            return;
+        }
+        self.root = Some(root.clone());
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.rx = Some(rx);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let notes = scan(&root);
+            let _ = tx.send((root, notes));
+            ctx.request_repaint();
+        });
+    }
+
+    /// Show the popup for the caret of `ed` (call before the keymap reads the
+    /// keys). Nothing while the input method composes or text is selected.
+    pub fn show(&mut self, ctx: &egui::Context, ed: &mut crate::engine::Editor, caret: egui::Rect, composing: bool) {
+        let sel = ed.selection();
+        let Some(file) = ed.path().map(Path::to_path_buf) else { return };
+        let trig = if composing || sel.anchor != sel.head { None } else { trigger(ed.text(), ed.caret()) };
+        let Some((start, query)) = trig else {
+            self.dismissed = None;
+            return;
+        };
+        if self.dismissed == Some(start) {
+            return;
+        }
+        self.refresh(ctx, &file);
+        let query = query.to_string();
+        if query != self.last_query {
+            self.view.selected = 0;
+            self.last_query = query.clone();
+        }
+        let names =
+            if query.is_empty() { self.notes.iter().map(String::as_str).take(8).collect() } else { suggest(&self.notes, &query, 8) };
+        let entries: Vec<ito_palette::Entry<String>> =
+            names.iter().map(|n| ito_palette::Entry::new(n.trim_end_matches(".md"), "", n.to_string())).collect();
+        let c = ito_theme::colors();
+        let style = ito_palette::Style {
+            panel: c.raised(),
+            border: c.border,
+            text: c.fg,
+            dim: c.dim,
+            selected_bg: c.chosen(),
+            selected_text: c.strong(),
+            hit: c.wait,
+            accent: c.done,
+        };
+        match ito_palette::show_at(ctx, caret, &mut self.view, &entries, &style) {
+            Some(ito_palette::Answer::Pick(pick)) => {
+                let name = link_name(&self.notes, &pick);
+                let text = ed.text();
+                let end = ed.caret() + if text[ed.caret()..].starts_with("]]") { 2 } else { 0 };
+                let at = start + name.len() + 2;
+                let p = at;
+                ed.replace(&[(start..end, format!("{name}]]"))], ito_textbuf::Selection { anchor: p, head: p });
+                self.dismissed = None;
+            }
+            Some(ito_palette::Answer::Close) => self.dismissed = Some(start),
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +299,21 @@ mod tests {
         assert_eq!(scan(&d), ["a.md", "sub/b.MD"]);
         assert_eq!(root_of(&d.join("sub").join("b.MD")), d);
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn trigger_needs_an_open_link_on_the_caret_line() {
+        assert_eq!(trigger("see [[no", 8), Some((6, "no")));
+        assert_eq!(trigger("see [[no", 6), Some((6, "")));
+        assert_eq!(trigger("[[a]] b", 7), None);
+        assert_eq!(trigger("[[a\nb", 5), None);
+        assert_eq!(trigger("[[a#h", 5), None);
+    }
+
+    #[test]
+    fn link_name_is_the_stem_unless_it_is_shared() {
+        let n: Vec<String> = ["a/x.md", "b/x.md", "y.md"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(link_name(&n, "a/x.md"), "a/x");
+        assert_eq!(link_name(&n, "y.md"), "y");
     }
 }

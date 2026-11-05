@@ -252,6 +252,11 @@ impl View {
         self.ime.swallow_keys(ctx);
     }
 
+    /// Where the caret was drawn last frame (for popups at the caret).
+    pub fn caret_rect(&self) -> Rect {
+        self.caret_rect
+    }
+
     /// Whether the input method is composing in the document, as of the
     /// last frame (for the status bar).
     pub fn composing(&self, ctx: &egui::Context) -> bool {

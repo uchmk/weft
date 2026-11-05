@@ -38,7 +38,7 @@ mod richpaste;
 mod settings;
 mod structure;
 mod tabs;
-#[allow(dead_code)] // wired in with the completion popup (uchmk/ito#198)
+#[allow(dead_code)] // wikilinks/resolve wait for backlinks and rename-follow
 mod vault;
 mod view;
 mod wrap;
@@ -313,6 +313,8 @@ struct App {
     bell_at: egui::Rect,
     /// The command palette while it is open (Ctrl+Shift+P, or the bar's box).
     palette: Option<ito_palette::View>,
+    /// The `[[` note list at the caret.
+    complete: vault::Completion,
     /// Whether the input method is on and its input mode, as the status bar
     /// last read it; `None` where the platform cannot tell.
     ime: Option<ito_ime::Status>,
@@ -501,6 +503,7 @@ impl App {
             bell_open: false,
             bell_at: egui::Rect::NOTHING,
             palette: None,
+            complete: Default::default(),
             ime: None,
             script,
             todo: Vec::new(),
@@ -575,6 +578,7 @@ impl App {
             bell_open: false,
             bell_at: egui::Rect::NOTHING,
             palette: None,
+            complete: Default::default(),
             ime: None,
             script: None,
             todo: Vec::new(),
@@ -1767,6 +1771,13 @@ impl App {
             if self.help.open {
                 // Esc and the scrolling keys are the help's before the keymap reads them.
                 self.help.keys(&ctx);
+            }
+            if self.editing() && !self.find.open {
+                // The `[[` list takes Up/Down/Enter/Tab/Esc before the keymap does.
+                let composing = self.doc.view.composing(&ctx);
+                if let Some(ed) = &mut self.doc.editor {
+                    self.complete.show(&ctx, ed, self.doc.view.caret_rect(), composing);
+                }
             }
             if self.editing() {
                 // While the input method composes, its keys (Enter, the arrows) are its own.
