@@ -112,6 +112,16 @@ impl Worker {
         Worker { tx, rx, asked: None, newest: Changes::default() }
     }
 
+    /// The newest marks so far, without asking for new ones.
+    pub fn newest(&mut self) -> &Changes {
+        while let Ok(c) = self.rx.try_recv() {
+            if c.key >= self.newest.key {
+                self.newest = c;
+            }
+        }
+        &self.newest
+    }
+
     /// Ask for the marks of `text` (at `version`) against `base` (`generation`
     /// says which baseline) unless that was asked already, and keep the newest
     /// result that came back.

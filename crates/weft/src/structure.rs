@@ -336,6 +336,11 @@ impl Worker {
         let _ = self.tx.send((version, text.to_owned()));
     }
 
+    /// The version last asked for.
+    pub fn asked_version(&self) -> Option<u64> {
+        self.asked
+    }
+
     /// The newest reading that came back since the last call.
     pub fn take(&self) -> Option<Tree> {
         self.rx.try_iter().last()

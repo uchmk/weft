@@ -44,6 +44,9 @@ use ito_keys::Key;
 use ito_keyscript::{Do, Runner, Step};
 
 /// The window's icon, in pixels square.
+/// Above this many bytes the text goes to the structure and gutter workers at most every `BIG_PAUSE`.
+const BIG_TEXT: usize = 512 * 1024;
+const BIG_PAUSE: std::time::Duration = std::time::Duration::from_millis(150);
 const ICON_PX: u32 = 128;
 
 const REPO: &str = "https://github.com/uchmk/weft";
@@ -190,6 +193,8 @@ struct Doc {
     finder: find::DocFinder,
     /// The rendered preview of this text: its thread, layout and scroll.
     preview: preview::DocPreview,
+    /// When the text last went to the structure and gutter workers (a big text is not sent on every key).
+    sent_at: Option<std::time::Instant>,
 }
 
 impl Doc {
@@ -211,6 +216,7 @@ impl Doc {
             saving: 0,
             finder: find::DocFinder::new(move || for_find()),
             preview: preview::DocPreview::new(move || for_preview()),
+            sent_at: None,
         }
     }
 }
@@ -970,16 +976,27 @@ impl App {
 
     /// The structure worker: ask for a reading of the text as it is, keep
     /// the newest that came back.
-    fn take_tree(&mut self) {
+    fn take_tree(&mut self, ctx: &egui::Context) {
         let Some(ed) = &self.doc.editor else { return };
-        self.doc.worker.ask(ed.version(), ed.text());
+        // Each ask copies the whole text, so past a size it is made at most every BIG_PAUSE (and once more when typing stops).
+        let wait = if ed.text().len() > BIG_TEXT {
+            self.doc.sent_at.map_or(std::time::Duration::ZERO, |t| BIG_PAUSE.saturating_sub(t.elapsed()))
+        } else {
+            std::time::Duration::ZERO
+        };
+        if wait.is_zero() {
+            self.doc.sent_at = Some(std::time::Instant::now());
+            self.doc.worker.ask(ed.version(), ed.text());
+        } else if self.doc.worker.asked_version() != Some(ed.version()) {
+            ctx.request_repaint_after(wait);
+        }
         if let Some(t) = self.doc.worker.take() {
             if self.doc.tree.as_ref().is_none_or(|old| old.version <= t.version) {
                 self.doc.tree = Some(t);
             }
         }
         let (base, generation) = ed.base();
-        let c = self.doc.changes.update(ed.version(), generation, base, ed.text());
+        let c = if wait.is_zero() { self.doc.changes.update(ed.version(), generation, base, ed.text()) } else { self.doc.changes.newest() };
         self.doc.view.set_changes(c);
     }
 
@@ -1656,7 +1673,7 @@ impl App {
         for m in std::mem::take(&mut self.said) {
             ito_a11y::announce(ui, &m);
         }
-        self.take_tree();
+        self.take_tree(&ctx);
         self.script(&ctx);
         // Last, so the edges of the frameless window win over what is under them.
         if !cfg!(target_os = "macos") {
@@ -2481,6 +2498,24 @@ mod tests {
             }
             println!("{} KiB, typing at the {label}: mean {:?}, worst {:?}", text.len() / 1024, total / 30, worst);
         }
+    }
+
+    /// A big text is read again at most every `BIG_PAUSE`, and once more when typing stops.
+    #[test]
+    fn a_big_text_is_read_again_after_a_pause() {
+        let text = "# Title
+
+line
+"
+        .repeat(BIG_TEXT / 8);
+        let (mut app, ctx) = typing_into(&text, 0, 0);
+        frame_with(&mut app, &ctx, vec![]);
+        frame_with(&mut app, &ctx, vec![Event::Text("x".to_owned())]);
+        let v = app.doc.editor.as_ref().unwrap().version();
+        assert_ne!(app.doc.worker.asked_version(), Some(v), "inside the pause the text is not copied");
+        std::thread::sleep(BIG_PAUSE + std::time::Duration::from_millis(20));
+        frame_with(&mut app, &ctx, vec![]);
+        assert_eq!(app.doc.worker.asked_version(), Some(v), "after it the newest text is asked");
     }
 
     fn text_of(app: &App) -> &str {
