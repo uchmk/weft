@@ -38,6 +38,8 @@ mod richpaste;
 mod settings;
 mod structure;
 mod tabs;
+#[allow(dead_code)] // wired in with the completion popup (uchmk/ito#198)
+mod vault;
 mod view;
 mod wrap;
 
