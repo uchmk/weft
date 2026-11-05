@@ -1,6 +1,6 @@
 # Checklist
 
-142 checks in TESTING.md, 76 left for a person.
+145 checks in TESTING.md, 78 left for a person.
 
 ## 1. Start
 
@@ -153,3 +153,10 @@
 
 - [ ] **16.2** Click and drag in the strip → The source scrolls there; no caret is put by the click; hovering shows the lines around the pointer 〔未訳〕
 - [ ] **16.3** Narrow the window, or open the preview until the source is narrow → The strip goes away and the text takes the room 〔未訳〕
+
+## 17. Contents column
+
+自動テスト済みなので下には出していない: 17.1
+
+- [ ] **17.2** Click an entry → The preview scrolls to that heading and the caret goes to its start; the source follows 〔未訳〕
+- [ ] **17.3** Narrow the preview (drag its edge), or open a document with no headings → The column goes away 〔未訳〕

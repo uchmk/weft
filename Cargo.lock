@@ -1877,6 +1877,8 @@ name = "ito-outline"
 version = "0.247.0"
 source = "git+https://github.com/uchmk/ito?rev=4902466675c7c43895c3ab43ba802770d8d56494#4902466675c7c43895c3ab43ba802770d8d56494"
 dependencies = [
+ "egui",
+ "ito-theme",
  "pulldown-cmark",
  "unicode-width",
 ]
@@ -4178,7 +4180,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "weft"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "eframe",
  "egui",

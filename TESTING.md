@@ -241,3 +241,11 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 16.1 | Open a document of a few hundred lines in a wide window | A strip at the right edge shows each line as a band in its colour; the frame marks what is on screen |
 | 16.2 | Click and drag in the strip | The source scrolls there; no caret is put by the click; hovering shows the lines around the pointer |
 | 16.3 | Narrow the window, or open the preview until the source is narrow | The strip goes away and the text takes the room |
+
+## 17. Contents column
+
+| # | Do | Expect |
+|---|---|---|
+| 17.1 | Open a document with several headings, open the preview in a wide window (Ctrl+Shift+M), in the light and dark themes | A "Contents" column at the right edge of the preview lists the headings, indented by level; the one being read is marked |
+| 17.2 | Click an entry | The preview scrolls to that heading and the caret goes to its start; the source follows |
+| 17.3 | Narrow the preview (drag its edge), or open a document with no headings | The column goes away |

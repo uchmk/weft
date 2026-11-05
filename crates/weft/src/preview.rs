@@ -46,6 +46,10 @@ pub struct DocPreview {
     seen_top: usize,
     /// The query the marks are of, and its matcher.
     matcher: Option<(u64, Option<ito_match::Matcher>)>,
+    /// The contents column's rows, of the structure reading with this version.
+    outline: Option<(u64, Vec<ito_outline::column::Item>)>,
+    /// The pane has been given its first width (from the window it is in).
+    sized: bool,
 }
 
 impl DocPreview {
@@ -67,7 +71,7 @@ impl DocPreview {
         };
         // Without the thread the pane stays empty; the source is untouched.
         let _ = std::thread::Builder::new().name("weft-preview".into()).spawn(run);
-        Self { tx, rx, asked: None, done: None, state: State::default(), seen_top: 0, matcher: None }
+        Self { tx, rx, asked: None, done: None, state: State::default(), seen_top: 0, matcher: None, outline: None, sized: false }
     }
 
     /// Whether the layout on hand is of `key`.
@@ -84,6 +88,15 @@ impl DocPreview {
             self.asked = Some(key);
             let _ = self.tx.send(Job { key, text: text.to_owned() });
         }
+    }
+
+    /// The rows of the contents column for `tree` (made once per reading).
+    fn outline_for(&mut self, tree: Option<&crate::structure::Tree>) -> &[ito_outline::column::Item] {
+        let Some(tree) = tree else { return &[] };
+        if self.outline.as_ref().map(|o| o.0) != Some(tree.version) {
+            self.outline = Some((tree.version, ito_outline::column::items(&tree.headings, |h| h.range.start)));
+        }
+        self.outline.as_ref().map_or(&[], |o| o.1.as_slice())
     }
 
     /// The columns the pane last fit (0 before the first frame).
@@ -146,27 +159,45 @@ impl App {
         }
         let mut shown = false;
         let mut out = ito_mdview::Output::default();
+        let mut jump = None;
+        let tree = self.doc.tree.as_ref();
+        let contents = self.table.tr("preview.contents").to_owned();
         let look = ito_prefs::Look { c, q: "" };
         let (empty_title, empty_body) = (self.table.tr("preview.empty_title"), self.table.tr("preview.empty_body"));
-        egui::Panel::right("preview")
-            .resizable(true)
-            .default_size((width * 0.42).round())
-            .size_range(egui::Rangef::new(240.0, (width * 0.7).max(240.0)))
-            .frame(egui::Frame::NONE.fill(c.bg))
-            .show(ui, |ui| {
-                let cols = if p.state.cols == 0 { 60 } else { p.state.cols };
-                // Lay out at the width the pane had last frame.
-                p.sync(key_of(cols, text_v), ed.text());
-                let Some(d) = p.done.as_ref() else { return };
-                if d.laid.lines.is_empty() {
-                    let _ = ito_prefs::empty_state(ui, look, ito_prefs::Mark::Info, empty_title, empty_body, None);
-                    return;
+        let range = egui::Rangef::new(240.0, (width * 0.7).max(240.0));
+        let first = !std::mem::replace(&mut p.sized, true);
+        let mut panel = egui::Panel::right("preview").resizable(true).size_range(range);
+        if first {
+            // Once, from the window as it is now (a saved width is not used before this).
+            panel = panel.exact_size((width * 0.42).round());
+        }
+        panel.frame(egui::Frame::NONE.fill(c.bg)).show(ui, |ui| {
+            let cols = if p.state.cols == 0 { 60 } else { p.state.cols };
+            // Lay out at the width the pane had last frame.
+            p.sync(key_of(cols, text_v), ed.text());
+            let Some(d) = p.done.as_ref() else { return };
+            if d.laid.lines.is_empty() {
+                let _ = ito_prefs::empty_state(ui, look, ito_prefs::Mark::Info, empty_title, empty_body, None);
+                return;
+            }
+            let matcher = if find_marks { p.matcher.as_ref().and_then(|m| m.1.as_ref()) } else { None };
+            let opt = Options { size: None, matcher, caret_byte: Some(caret) };
+            out = ito_mdview::show(ui, &d.laid, &mut p.state, &opt);
+            shown = true;
+            let rect = ui.max_rect();
+            let pane_cols = out.cols;
+            let size = (out.line_height / 1.5).max(6.0);
+            let font = egui::FontId::monospace(size);
+            let cell = ui.painter().layout_no_wrap("M".into(), font.clone(), c.fg).size().x;
+            let items = p.outline_for(tree);
+            if !items.is_empty() && pane_cols >= 48 {
+                let cols = ito_outline::column::cols_for(items, pane_cols);
+                let look = ito_outline::column::Look { cell, row_h: out.line_height, font, bold: None, title: contents };
+                if let Some(k) = ito_outline::column::show(ui, rect, items, cols, out.top_byte, None, true, &look) {
+                    jump = Some(items[k].target);
                 }
-                let matcher = if find_marks { p.matcher.as_ref().and_then(|m| m.1.as_ref()) } else { None };
-                let opt = Options { size: None, matcher, caret_byte: Some(caret) };
-                out = ito_mdview::show(ui, &d.laid, &mut p.state, &opt);
-                shown = true;
-            });
+            }
+        });
         if !shown {
             return;
         }
@@ -180,6 +211,14 @@ impl App {
                 while !ed.text().is_char_boundary(b) {
                     b -= 1;
                 }
+                ed.set_caret(b, false);
+                self.doc.view.follow = true;
+            }
+        }
+        if let Some(byte) = jump {
+            self.doc.preview.state.scroll_to_byte(byte);
+            if let Some(ed) = &mut self.doc.editor {
+                let b = byte.min(ed.text().len());
                 ed.set_caret(b, false);
                 self.doc.view.follow = true;
             }
@@ -301,5 +340,22 @@ mod tests {
         assert!(app.preview_report().contains("preview: open"));
         app.preview_toggle(&ctx);
         assert!(app.preview_report().contains("preview: closed"));
+    }
+
+    /// 17.1: The contents rows are made once per reading, one per heading, and
+    /// jump to the heading's first byte.
+    #[test]
+    fn the_contents_rows_are_per_heading() {
+        let text = "# One
+
+## Two
+";
+        let tree = crate::structure::read(1, text);
+        let mut p = DocPreview::new(|| {});
+        let rows = p.outline_for(Some(&tree));
+        assert_eq!(rows.len(), 2);
+        assert_eq!((rows[0].target, rows[1].target), (0, 7));
+        assert_eq!(rows[1].label, "  Two");
+        assert!(p.outline_for(None).is_empty());
     }
 }

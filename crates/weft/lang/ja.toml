@@ -200,6 +200,7 @@ empty_title = "プレビューするものがありません"
 empty_body = "Markdown を書くと、ここに整形して表示します。"
 on = "プレビューを表示"
 off = "プレビューを隠した"
+contents = "目次"
 
 [find]
 find_hint = "検索"

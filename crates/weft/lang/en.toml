@@ -213,6 +213,7 @@ empty_title = "Nothing to preview"
 empty_body = "Type some Markdown and it shows here."
 on = "Preview on"
 off = "Preview off"
+contents = "Contents"
 
 [find]
 find_hint = "Find"
