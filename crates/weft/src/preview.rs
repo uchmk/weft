@@ -48,8 +48,8 @@ pub struct DocPreview {
     matcher: Option<(u64, Option<ito_match::Matcher>)>,
     /// The contents column's rows, of the structure reading with this version.
     outline: Option<(u64, Vec<ito_outline::column::Item>)>,
-    /// The pane has been given its first width (from the window it is in).
-    sized: bool,
+    /// The frame that gave the pane its first width (from the window it is in); every pass of that frame repeats it, because egui may discard the first pass.
+    sized: Option<u64>,
 }
 
 impl DocPreview {
@@ -71,7 +71,7 @@ impl DocPreview {
         };
         // Without the thread the pane stays empty; the source is untouched.
         let _ = std::thread::Builder::new().name("weft-preview".into()).spawn(run);
-        Self { tx, rx, asked: None, done: None, state: State::default(), seen_top: 0, matcher: None, outline: None, sized: false }
+        Self { tx, rx, asked: None, done: None, state: State::default(), seen_top: 0, matcher: None, outline: None, sized: None }
     }
 
     /// Whether the layout on hand is of `key`.
@@ -165,35 +165,46 @@ impl App {
         let look = ito_prefs::Look { c, q: "" };
         let (empty_title, empty_body) = (self.table.tr("preview.empty_title"), self.table.tr("preview.empty_body"));
         let range = egui::Rangef::new(240.0, (width * 0.7).max(240.0));
-        let first = !std::mem::replace(&mut p.sized, true);
+        let frame = ui.ctx().cumulative_frame_nr();
+        let first = *p.sized.get_or_insert(frame) == frame;
         let mut panel = egui::Panel::right("preview").resizable(true).size_range(range);
         if first {
             // Once, from the window as it is now (a saved width is not used before this).
             panel = panel.exact_size((width * 0.42).round());
         }
         panel.frame(egui::Frame::NONE.fill(c.bg)).show(ui, |ui| {
+            // Fill the width the panel was given, or it shrinks to what the contents used and is stored that small.
+            ui.set_min_width(ui.max_rect().width());
             let cols = if p.state.cols == 0 { 60 } else { p.state.cols };
             // Lay out at the width the pane had last frame.
             p.sync(key_of(cols, text_v), ed.text());
+            p.outline_for(tree);
             let Some(d) = p.done.as_ref() else { return };
             if d.laid.lines.is_empty() {
                 let _ = ito_prefs::empty_state(ui, look, ito_prefs::Mark::Info, empty_title, empty_body, None);
                 return;
             }
             let matcher = if find_marks { p.matcher.as_ref().and_then(|m| m.1.as_ref()) } else { None };
-            let opt = Options { size: None, matcher, caret_byte: Some(caret) };
-            out = ito_mdview::show(ui, &d.laid, &mut p.state, &opt);
-            shown = true;
-            let rect = ui.max_rect();
-            let pane_cols = out.cols;
-            let size = (out.line_height / 1.5).max(6.0);
+            // The grid the text is drawn on, worked out here so the contents column can take its width first.
+            let size = ito_theme::scale::Text::EditorText.at(ui.ctx());
             let font = egui::FontId::monospace(size);
-            let cell = ui.painter().layout_no_wrap("M".into(), font.clone(), c.fg).size().x;
-            let items = p.outline_for(tree);
-            if !items.is_empty() && pane_cols >= 48 {
-                let cols = ito_outline::column::cols_for(items, pane_cols);
-                let look = ito_outline::column::Look { cell, row_h: out.line_height, font, bold: None, title: contents };
-                if let Some(k) = ito_outline::column::show(ui, rect, items, cols, out.top_byte, None, true, &look) {
+            let cell = ui.painter().layout_no_wrap("M".into(), font.clone(), c.fg).size().x.max(1.0);
+            let opt = Options { size: Some(size), matcher, caret_byte: Some(caret) };
+            let rect = ui.max_rect();
+            let items = p.outline.as_ref().map_or(&[][..], |o| o.1.as_slice());
+            let look = ito_outline::column::Look { cell, row_h: (size * 1.5).round(), font, bold: None, title: contents };
+            let split = ito_outline::column::split(rect, items, &look);
+            out = match &split {
+                // The text takes the pane up to the column's rule, so the column covers nothing.
+                Some(sp) => {
+                    let mut text_ui = ui.new_child(egui::UiBuilder::new().max_rect(sp.text));
+                    ito_mdview::show(&mut text_ui, &d.laid, &mut p.state, &opt)
+                }
+                None => ito_mdview::show(ui, &d.laid, &mut p.state, &opt),
+            };
+            shown = true;
+            if let Some(sp) = split {
+                if let Some(k) = ito_outline::column::show(ui, sp.column, items, sp.cols, out.top_byte, None, false, &look) {
                     jump = Some(items[k].target);
                 }
             }
