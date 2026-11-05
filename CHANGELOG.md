@@ -2,6 +2,12 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/)、日付は JST。
 
+## [0.2.33] - 2026-11-05
+
+### 変更
+
+- ito を v0.251.0（6c6a40b）に上げた。リスト・整形のコマンドが YAML のフロントマターの中の行をリストとして読まなくなった（`ito_mdedit::front_matter`）。
+
 ## [0.2.32] - 2026-11-05
 
 ### 追加
