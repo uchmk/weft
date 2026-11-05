@@ -30,6 +30,7 @@ mod settings;
 mod structure;
 mod tabs;
 mod view;
+mod wrap;
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
@@ -191,6 +192,9 @@ struct App {
     /// The rendered preview beside the source is wanted (kept in preview.toml).
     preview_open: bool,
     preview_writer: ito_common::kept::Writer,
+    /// Long lines fold at the pane's width (kept in `wrap.toml`).
+    wrap: bool,
+    wrap_writer: ito_common::kept::Writer,
     /// The window, for the workers of the documents opened later.
     ctx: egui::Context,
     /// The open files as tabs (src/tabs.rs); `doc` is the front one's
@@ -372,6 +376,8 @@ impl App {
                 preview::state_path().unwrap_or_default(),
                 live && preview::state_path().is_some(),
             ),
+            wrap: live && wrap::read(),
+            wrap_writer: ito_common::kept::Writer::new(wrap::state_path().unwrap_or_default(), live && wrap::state_path().is_some()),
             ctx,
             tabs: ito_tabs::Tabs::new(tab_settings.limit),
             parked: Vec::new(),
@@ -435,6 +441,8 @@ impl App {
             find_focus: false,
             preview_open: false,
             preview_writer: ito_common::kept::Writer::new(PathBuf::new(), false),
+            wrap: false,
+            wrap_writer: ito_common::kept::Writer::new(PathBuf::new(), false),
             ctx: egui::Context::default(),
             tabs: ito_tabs::Tabs::new(ito_tabs::DEFAULT_LIMIT),
             parked: Vec::new(),
@@ -731,6 +739,7 @@ impl App {
             "help" => self.help.toggle(),
             "file.save" => self.save(),
             "file.open_in_editor" => self.open_in_editor(),
+            "view.toggle_wrap" => self.wrap_toggle(ctx),
             "view.toggle_preview" => self.preview_toggle(ctx),
             _ if ito_tabs::command(name).is_some() => {
                 if let (true, Some(op)) = (self.uncovered(), ito_tabs::command(name)) {
@@ -1528,7 +1537,7 @@ impl App {
                 }
                 let finds: &[std::ops::Range<usize>] =
                     if self.find.open { self.doc.finder.marks(&find::key(&self.find, ed, &self.doc.finder)) } else { &[] };
-                self.doc.view.show(ui, ed, self.doc.tree.as_ref(), finds, editing);
+                self.doc.view.show(ui, ed, self.doc.tree.as_ref(), finds, editing, self.wrap);
                 self.preview_sync();
             } else {
                 // No file: the ghost stands where the document would be.

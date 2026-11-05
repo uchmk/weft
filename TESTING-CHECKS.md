@@ -1,6 +1,6 @@
 # Checklist
 
-145 checks in TESTING.md, 78 left for a person.
+148 checks in TESTING.md, 81 left for a person.
 
 ## 1. Start
 
@@ -160,3 +160,9 @@
 
 - [ ] **17.2** Click an entry → The preview scrolls to that heading and the caret goes to its start; the source follows 〔未訳〕
 - [ ] **17.3** Narrow the preview (drag its edge), or open a document with no headings → The column goes away 〔未訳〕
+
+## 18. Word wrap
+
+- [ ] **18.1** Open a document with long lines in a narrow window and press Alt+Z → Long lines fold at the pane's width; the status line announces it; line numbers sit at each line's first row 〔未訳〕
+- [ ] **18.2** With wrap on, type, select across folded lines, search, and click in a lower row → The caret, selection and match bands follow each row; the click puts the caret in that row 〔未訳〕
+- [ ] **18.3** Press Alt+Z again, then restart the app → Lines scroll sideways again; the last choice is kept across restarts 〔未訳〕

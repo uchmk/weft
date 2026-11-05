@@ -54,6 +54,7 @@ fixed = "weft reads {} itself: bound here, it never runs."
 "Go to tab 8" = "Go to tab 8"
 "Go to tab 9" = "Go to tab 9"
 "Toggle the preview" = "Toggle the preview"
+"Toggle word wrap" = "Toggle word wrap"
 "Find" = "Find"
 "Find and replace" = "Find and replace"
 "Next match" = "Next match"
@@ -214,6 +215,10 @@ empty_body = "Type some Markdown and it shows here."
 on = "Preview on"
 off = "Preview off"
 contents = "Contents"
+
+[wrap]
+on = "Word wrap on"
+off = "Word wrap off"
 
 [find]
 find_hint = "Find"

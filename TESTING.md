@@ -249,3 +249,11 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 17.1 | Open a document with several headings, open the preview in a wide window (Ctrl+Shift+M), in the light and dark themes | A "Contents" column at the right edge of the preview lists the headings, indented by level; the one being read is marked |
 | 17.2 | Click an entry | The preview scrolls to that heading and the caret goes to its start; the source follows |
 | 17.3 | Narrow the preview (drag its edge), or open a document with no headings | The column goes away |
+
+## 18. Word wrap
+
+| # | Do | Expect |
+|---|---|---|
+| 18.1 | Open a document with long lines in a narrow window and press Alt+Z | Long lines fold at the pane's width; the status line announces it; line numbers sit at each line's first row |
+| 18.2 | With wrap on, type, select across folded lines, search, and click in a lower row | The caret, selection and match bands follow each row; the click puts the caret in that row |
+| 18.3 | Press Alt+Z again, then restart the app | Lines scroll sideways again; the last choice is kept across restarts |

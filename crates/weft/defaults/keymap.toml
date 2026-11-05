@@ -136,6 +136,11 @@ run = "view.toggle_preview"
 desc = "Toggle the preview"
 
 [[app.keymap]]
+on = "<A-z>"
+run = "view.toggle_wrap"
+desc = "Toggle word wrap"
+
+[[app.keymap]]
 on = "<C-f>"
 run = "find.open"
 desc = "Find"

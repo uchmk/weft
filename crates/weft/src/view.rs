@@ -1,6 +1,6 @@
 //! The document on screen: the lines in view with their colours, the
 //! selection, the caret, the input method's composition and the mouse.
-//! Lines do not wrap yet: a long one scrolls sideways.
+//! A long line scrolls sideways, or folds at the pane's width (word wrap).
 //!
 //! Only the lines in view are laid out, from the colours the structure worker
 //! last read. Those may be a version behind the text; a run is cut to the
@@ -14,7 +14,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use egui::text::{CCursor, LayoutJob, TextFormat};
-use egui::{pos2, vec2, Align2, Color32, FontId, Galley, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{pos2, vec2, Align2, Color32, FontId, Galley, Id, Rect, Sense, Stroke, StrokeKind, Ui};
 use ito_textbuf::pos;
 use ito_theme::mix;
 
@@ -39,11 +39,15 @@ struct Line {
     /// The composition drawn in it: where (bytes from the line's start) and
     /// how many characters long.
     ime: Option<(usize, usize)>,
+    /// Its top, in points below the first line's top.
+    off: f32,
+    /// Its height: one row, or the rows a wrapped line takes.
+    h: f32,
 }
 
 impl Line {
-    /// The x (from the galley's left) of `byte` in the text, on this line.
-    fn x(&self, text: &str, byte: usize, with_ime: bool) -> f32 {
+    /// The galley's character at `byte` of the text, on this line.
+    fn ch(&self, text: &str, byte: usize, with_ime: bool) -> usize {
         let line = &text[self.start..self.end];
         let b = byte.clamp(self.start, self.end) - self.start;
         let mut ch = pos::char_of_byte(line, b);
@@ -52,14 +56,19 @@ impl Line {
                 ch += len;
             }
         }
-        self.galley.pos_from_cursor(CCursor::new(ch)).min.x
+        ch
     }
 
-    /// The byte (in the text) nearest to `x` from the galley's left, on a
-    /// grapheme's boundary.
-    fn byte_at(&self, text: &str, x: f32, row_h: f32) -> usize {
+    /// Where `byte` is (from the galley's top left), on this line.
+    fn pos(&self, text: &str, byte: usize, with_ime: bool) -> egui::Pos2 {
+        self.galley.pos_from_cursor(CCursor::new(self.ch(text, byte, with_ime))).min
+    }
+
+    /// The byte (in the text) nearest to (`x`, `y`) from the galley's top
+    /// left, on a grapheme's boundary.
+    fn byte_at(&self, text: &str, x: f32, y: f32) -> usize {
         let line = &text[self.start..self.end];
-        let mut ch = self.galley.cursor_from_pos(vec2(x, row_h / 2.0)).index.0;
+        let mut ch = self.galley.cursor_from_pos(vec2(x, y)).index.0;
         if let Some((at, len)) = self.ime {
             let at = pos::char_of_byte(line, at);
             if ch >= at + len {
@@ -72,12 +81,79 @@ impl Line {
         let b = pos::next_grapheme(line, b).and_then(|n| pos::prev_grapheme(line, n)).unwrap_or(b);
         self.start + b
     }
+
+    /// The galley's characters `a..b` as one band per row they are on:
+    /// (the row's top, the left x, the right x), from the galley's top left.
+    fn bands(&self, a: usize, b: usize) -> Vec<(f32, f32, f32)> {
+        let mut out = Vec::new();
+        let mut off = 0;
+        for placed in &self.galley.rows {
+            let n = placed.row.char_count_excluding_newline().0;
+            let (s, e) = (a.max(off), b.min(off + n));
+            if s < e || (a == b && a >= off && a < off + n.max(1)) {
+                let x0 = self.galley.pos_from_cursor(CCursor::new(s)).min.x;
+                let x1 = if e >= off + n { placed.rect().max.x } else { self.galley.pos_from_cursor(CCursor::new(e)).min.x };
+                out.push((placed.pos.y, x0, x1));
+            }
+            off += n;
+        }
+        out
+    }
+}
+
+/// What lays a line out: the text and its colours, and the width a line wraps
+/// at (`None`: it does not wrap).
+struct Lay<'a> {
+    ui: &'a Ui,
+    ed: &'a Editor,
+    tree: Option<&'a Tree>,
+    colors: &'a ito_theme::Colors,
+    plain: &'a TextFormat,
+    wrap: Option<f32>,
+    row_h: f32,
+}
+
+impl Lay<'_> {
+    /// Line `n`, `off` points below the top; `comp` is the composition
+    /// (the caret's byte, what is composed, how it looks) drawn in it.
+    fn line(&self, n: usize, off: f32, comp: Option<(usize, &str, &TextFormat)>) -> Option<Line> {
+        let text = self.ed.text();
+        let r = self.ed.line_range(n)?;
+        let raw = &text[r.clone()];
+        let (body, brk) = match raw.strip_suffix('\n') {
+            Some(b) => (b.strip_suffix('\r').unwrap_or(b), true),
+            None => (raw, false),
+        };
+        let (start, end) = (r.start, r.start + body.len());
+        let at = comp.map(|(caret, _, _)| caret.clamp(start, end) - start);
+        let mut job =
+            layout(body, self.tree.and_then(|t| t.lines.get(n)), self.colors, self.plain, comp.zip(at).map(|((_, s, f), a)| (a, s, f)));
+        if let Some(w) = self.wrap {
+            job.wrap.max_width = w;
+        }
+        let galley = self.ui.painter().layout_job(job);
+        let ime = comp.zip(at).map(|((_, s, _), a)| (a, s.chars().count()));
+        let h = if self.wrap.is_some() { galley.rows.len().max(1) as f32 * self.row_h } else { self.row_h };
+        Some(Line { n, start, end, brk, galley, ime, off, h })
+    }
+
+    /// The height of line `n`.
+    fn height(&self, n: usize) -> f32 {
+        if self.wrap.is_none() {
+            return self.row_h;
+        }
+        self.line(n, 0.0, None).map_or(self.row_h, |l| l.h)
+    }
 }
 
 pub struct View {
-    /// How far the text is scrolled, in points (x to the left, y down).
-    scroll: Vec2,
-    /// The row height `scroll` was measured in (0 before the first frame).
+    /// The first line shown, and how far (in points) it is scrolled up out of
+    /// the view: less than its height.
+    top: usize,
+    sub: f32,
+    /// How far the text is scrolled sideways, in points (0 when it wraps).
+    scroll_x: f32,
+    /// The row height `sub` was measured in (0 before the first frame).
     row_h: f32,
     /// How many lines a page moves: what fit last frame, less one.
     page: usize,
@@ -91,7 +167,9 @@ pub struct View {
 impl Default for View {
     fn default() -> View {
         View {
-            scroll: Vec2::ZERO,
+            top: 0,
+            sub: 0.0,
+            scroll_x: 0.0,
             row_h: 0.0,
             page: 20,
             follow: true,
@@ -108,18 +186,42 @@ impl View {
 
     /// The line at the top of the view (0 before the first frame).
     pub fn top_line(&self) -> usize {
-        if self.row_h > 0.0 {
-            (self.scroll.y / self.row_h).floor() as usize
-        } else {
-            0
-        }
+        self.top
     }
 
     /// Scroll so `line` is at the top, without bringing the caret into view
     /// (the preview was scrolled and this follows it).
     pub fn scroll_to_line(&mut self, line: usize) {
         if self.row_h > 0.0 {
-            self.scroll.y = line as f32 * self.row_h;
+            self.top = line;
+            self.sub = 0.0;
+        }
+    }
+
+    /// How far down the first line is, as if every line were one row.
+    #[cfg(test)]
+    fn scroll_y(&self) -> f32 {
+        self.top as f32 * self.row_h + self.sub
+    }
+
+    /// Carry `sub` over into `top` so it is within the first line, and keep the
+    /// first line a line of the text. `h` is the height of a line.
+    fn settle(&mut self, total: usize, row_h: f32, h: &dyn Fn(usize) -> f32) {
+        self.top = self.top.min(total.saturating_sub(1));
+        while self.sub >= h(self.top) && self.top + 1 < total {
+            self.sub -= h(self.top);
+            self.top += 1;
+        }
+        while self.sub < 0.0 {
+            if self.top == 0 {
+                self.sub = 0.0;
+                break;
+            }
+            self.top -= 1;
+            self.sub += h(self.top);
+        }
+        if self.top + 1 >= total {
+            self.sub = self.sub.min((h(self.top) - row_h).max(0.0));
         }
     }
 
@@ -145,8 +247,9 @@ impl View {
     /// keys: the input method and the mouse go to it. Typing, copy and paste
     /// and the input method's commits come in with the keys, in their order,
     /// before this; here the composition is drawn and the candidate window
-    /// placed.
-    pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, finds: &[std::ops::Range<usize>], keys: bool) {
+    /// placed. With `wrap` a long line is folded at the width of the pane
+    /// instead of scrolling sideways.
+    pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, finds: &[std::ops::Range<usize>], keys: bool, wrap: bool) {
         let rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(rect, Sense::click_and_drag());
         let c = ito_theme::colors();
@@ -155,7 +258,7 @@ impl View {
         // A new face (the fonts come in after the first frame) keeps the same
         // line at the top and the caret in view: a `+LINE` far down stays shown.
         if self.row_h > 0.0 && self.row_h != row_h {
-            self.scroll.y *= row_h / self.row_h;
+            self.sub *= row_h / self.row_h;
             self.follow = true;
         }
         self.row_h = row_h;
@@ -183,63 +286,88 @@ impl View {
         let strip = Rect::from_min_max(pos2(text_rect.right(), rect.top()), rect.max);
         let text_left = text_rect.left() + PAD;
         let view_w = (text_rect.width() - 2.0 * PAD).max(char_w);
+        let view_h = text_rect.height();
+
+        let plain = TextFormat::simple(font.clone(), c.fg);
+        let ime_format = TextFormat { background: c.selection(), underline: Stroke::new(1.0, c.ime_underline()), ..plain.clone() };
+        let caret_line = ed.line_of(ed.caret());
+        let caret_byte = ed.caret();
+        let comp = |n: usize| (n == caret_line && !preedit.is_empty()).then_some((caret_byte, preedit.as_str(), &ime_format));
+        let lay = Lay { ui, ed, tree, colors: &c, plain: &plain, wrap: wrap.then_some(view_w), row_h };
+        let h = |n: usize| lay.height(n);
 
         // --- Scrolling: the wheel, then the caret.
         if keys && response.hovered() {
             let (d, command) = ui.input(|i| (i.smooth_scroll_delta, i.modifiers.command));
             if !command {
-                self.scroll -= d;
+                self.sub -= d.y;
+                self.scroll_x -= d.x;
             }
         }
-        let caret_line = ed.line_of(ed.caret());
+        self.settle(total, row_h, &h);
         if self.follow {
-            let top = caret_line as f32 * row_h;
-            if top < self.scroll.y {
-                self.scroll.y = top;
-            } else if top + row_h > self.scroll.y + text_rect.height() {
-                self.scroll.y = top + row_h - text_rect.height();
+            if let Some(l) = lay.line(caret_line, 0.0, comp(caret_line)) {
+                let cy = if wrap { l.pos(text, caret_byte, true).y } else { 0.0 };
+                if caret_line < self.top || (caret_line == self.top && cy < self.sub) {
+                    self.top = caret_line;
+                    self.sub = cy;
+                } else {
+                    // How far below the top of the view the caret's row ends.
+                    let rows = (view_h / row_h).ceil() as usize + 1;
+                    let bottom = if caret_line >= self.top + rows {
+                        f32::INFINITY
+                    } else {
+                        (self.top..caret_line).map(&h).sum::<f32>() - self.sub + cy + row_h
+                    };
+                    if bottom > view_h {
+                        // The top that puts the caret's row at the bottom.
+                        let mut acc = cy + row_h;
+                        let mut n = caret_line;
+                        loop {
+                            if acc >= view_h {
+                                self.top = n;
+                                self.sub = acc - view_h;
+                                break;
+                            }
+                            if n == 0 {
+                                self.top = 0;
+                                self.sub = 0.0;
+                                break;
+                            }
+                            n -= 1;
+                            acc += h(n);
+                        }
+                    }
+                }
             }
         }
-        self.scroll.y = self.scroll.y.clamp(0.0, (total - 1) as f32 * row_h);
-        self.scroll.x = self.scroll.x.max(0.0);
+        self.settle(total, row_h, &h);
+        if wrap {
+            self.scroll_x = 0.0;
+        }
+        self.scroll_x = self.scroll_x.max(0.0);
 
         // --- The lines in view.
-        let first = ((self.scroll.y / row_h).floor() as usize).min(total - 1);
-        let y0 = text_rect.top() - (self.scroll.y - first as f32 * row_h);
-        let count = (text_rect.height() / row_h).ceil() as usize + 1;
-        let plain = TextFormat::simple(font.clone(), c.fg);
-        let ime_format = TextFormat { background: c.selection(), underline: Stroke::new(1.0, c.ime_underline()), ..plain.clone() };
-        let mut lines: Vec<Line> = Vec::with_capacity(count);
-        let mut start = ed.line_range(first).map_or(text.len(), |r| r.start);
-        for n in first..(first + count).min(total) {
-            let (end, brk, next) = match text[start..].find('\n') {
-                Some(i) => {
-                    let nl = start + i;
-                    let end = if nl > start && text.as_bytes()[nl - 1] == b'\r' { nl - 1 } else { nl };
-                    (end, true, nl + 1)
-                }
-                None => (text.len(), false, text.len()),
-            };
-            let line = &text[start..end];
-            let ime_at = (n == caret_line && !preedit.is_empty()).then(|| ed.caret().clamp(start, end) - start);
-            let job = layout(line, tree.and_then(|t| t.lines.get(n)), &c, &plain, ime_at.map(|a| (a, preedit.as_str(), &ime_format)));
-            let galley = ui.painter().layout_job(job);
-            let ime = ime_at.map(|a| (a, preedit.chars().count()));
-            lines.push(Line { n, start, end, brk, galley, ime });
-            start = next;
-            if !brk {
+        let y0 = text_rect.top() - self.sub;
+        let mut lines: Vec<Line> = Vec::new();
+        let mut off = 0.0;
+        for n in self.top..total {
+            if off - self.sub >= view_h {
                 break;
             }
+            let Some(l) = lay.line(n, off, comp(n)) else { break };
+            off += l.h;
+            lines.push(l);
         }
 
         // Sideways, now that the caret's line is laid out.
         if self.follow {
-            if let Some(l) = lines.iter().find(|l| l.n == caret_line) {
-                let x = l.x(text, ed.caret(), true);
-                if x < self.scroll.x {
-                    self.scroll.x = (x - 4.0 * char_w).max(0.0);
-                } else if x + char_w > self.scroll.x + view_w {
-                    self.scroll.x = x + 4.0 * char_w - view_w;
+            if let (false, Some(l)) = (wrap, lines.iter().find(|l| l.n == caret_line)) {
+                let x = l.pos(text, caret_byte, true).x;
+                if x < self.scroll_x {
+                    self.scroll_x = (x - 4.0 * char_w).max(0.0);
+                } else if x + char_w > self.scroll_x + view_w {
+                    self.scroll_x = x + 4.0 * char_w - view_w;
                 }
             }
             self.follow = false;
@@ -249,12 +377,12 @@ impl View {
         if keys && !lines.is_empty() && response.is_pointer_button_down_on() && !ui.rect_contains_pointer(strip) {
             let (pressed, primary, shift) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down(), i.modifiers.shift));
             if let (true, Some(p)) = (primary, response.interact_pointer_pos()) {
-                let row = ((p.y - y0) / row_h).floor().max(0.0) as usize;
-                let l = &lines[row.min(lines.len() - 1)];
-                let b = l.byte_at(text, p.x - text_left + self.scroll.x, row_h);
+                let l = lines.iter().find(|l| p.y < y0 + l.off + l.h).unwrap_or(&lines[lines.len() - 1]);
+                let y = (p.y - y0 - l.off).clamp(0.0, (l.h - 1.0).max(0.0));
+                let b = l.byte_at(text, p.x - text_left + self.scroll_x, y);
                 ed.set_caret(b, !pressed || shift);
                 if !pressed && (p.y < text_rect.top() || p.y > text_rect.bottom()) {
-                    self.scroll.y += if p.y < text_rect.top() { -row_h } else { row_h };
+                    self.sub += if p.y < text_rect.top() { -row_h } else { row_h };
                     self.follow = true;
                     ui.ctx().request_repaint();
                 }
@@ -268,29 +396,32 @@ impl View {
         let sel = ed.selection().range();
         let gutter_painter = ui.painter_at(rect);
         let painter = ui.painter_at(text_rect);
-        let origin_x = text_left - self.scroll.x;
+        let origin_x = text_left - self.scroll_x;
         let look = MarkColours::of(&c);
-        for (i, l) in lines.iter().enumerate() {
-            let y = y0 + i as f32 * row_h;
+        let band = |y: f32, (by, x0, x1): (f32, f32, f32), extra: f32| {
+            Rect::from_min_max(pos2(origin_x + x0, y + by), pos2(origin_x + x1 + extra, y + by + row_h))
+        };
+        for l in &lines {
+            let y = y0 + l.off;
             let number = if l.n == caret_line { c.gutter_active() } else { c.gutter() };
             gutter_painter.text(pos2(text_rect.left() - PAD, y), Align2::RIGHT_TOP, (l.n + 1).to_string(), font.clone(), number);
             let line = &text[l.start..l.end];
             let marks = marks(line, tree.and_then(|t| t.hard_break(l.n)));
-            // The x of the boundary before character `ch`. The composition
-            // sits at a boundary: what starts there, or ends after it, is
-            // drawn to its right.
+            // The galley's character at the boundary before character `ch`.
+            // The composition sits at a boundary: what starts there, or ends
+            // after it, is drawn to its right.
             let ime = l.ime.map(|(at, len)| (pos::char_of_byte(line, at), len));
-            let gx = |ch: usize, end: bool| {
-                let shift = match ime {
+            let at = |ch: usize, end: bool| {
+                ch + match ime {
                     Some((at, len)) if ch > at || (ch == at && !end) => len,
                     _ => 0,
-                };
-                origin_x + l.galley.pos_from_cursor(CCursor::new(ch + shift)).min.x
+                }
             };
             // Under the selection, so a selected break reads as selected.
             if let Some(r) = &marks.brk {
-                let (x0, x1) = (gx(r.start, false), gx(r.end, true));
-                painter.rect_filled(Rect::from_min_max(pos2(x0, y), pos2(x1, y + row_h)), 2.0, look.fill);
+                for b in l.bands(at(r.start, false), at(r.end, true)) {
+                    painter.rect_filled(band(y, b, 0.0), 2.0, look.fill);
+                }
             }
             // The matches of the search, under the selection; the one the
             // selection is on is stronger.
@@ -299,47 +430,54 @@ impl View {
                     break;
                 }
                 let (s, e) = (f.start.clamp(l.start, l.end), f.end.clamp(l.start, l.end));
-                let (x0, x1) = (origin_x + l.x(text, s, false), origin_x + l.x(text, e, false));
-                if x1 > x0 {
-                    let fill = if *f == sel { c.match_current_bg() } else { c.match_bg() };
-                    painter.rect_filled(Rect::from_min_max(pos2(x0, y), pos2(x1, y + row_h)), 2.0, fill);
+                let fill = if *f == sel { c.match_current_bg() } else { c.match_bg() };
+                for b in l.bands(l.ch(text, s, false), l.ch(text, e, false)) {
+                    if b.2 > b.1 {
+                        painter.rect_filled(band(y, b, 0.0), 2.0, fill);
+                    }
                 }
             }
             if !sel.is_empty() && sel.start <= l.end && sel.end > l.start {
                 let s = sel.start.clamp(l.start, l.end);
                 let e = sel.end.clamp(l.start, l.end);
                 let past_break = l.brk && sel.end > l.end;
-                let x0 = origin_x + l.x(text, s, false);
-                let x1 = origin_x + l.x(text, e, false) + if past_break { char_w / 2.0 } else { 0.0 };
-                if x1 > x0 {
-                    painter.rect_filled(Rect::from_min_max(pos2(x0, y), pos2(x1, y + row_h)), 0.0, c.selection());
+                let bands = l.bands(l.ch(text, s, false), l.ch(text, e, false));
+                let last = bands.len().saturating_sub(1);
+                for (i, b) in bands.into_iter().enumerate() {
+                    let extra = if past_break && i == last { char_w / 2.0 } else { 0.0 };
+                    if b.2 + extra > b.1 {
+                        painter.rect_filled(band(y, b, extra), 0.0, c.selection());
+                    }
                 }
             }
             painter.galley(pos2(origin_x, y), l.galley.clone(), c.fg);
             if let Some(r) = &marks.brk {
                 for ch in r.clone() {
-                    let x = (gx(ch, false) + gx(ch + 1, true)) / 2.0;
-                    painter.circle_filled(pos2(x, y + row_h / 2.0), 1.25, look.dot);
+                    if let Some(&b) = l.bands(at(ch, false), at(ch + 1, true)).first() {
+                        let rc = band(y, b, 0.0);
+                        painter.circle_filled(pos2(rc.center().x, y + b.0 + row_h / 2.0), 1.25, look.dot);
+                    }
                 }
             }
             for &ch in &marks.wide {
-                let (x0, x1) = (gx(ch, false), gx(ch + 1, true));
+                let Some(&b) = l.bands(at(ch, false), at(ch + 1, true)).first() else { continue };
+                let (x0, x1) = (origin_x + b.1, origin_x + b.2);
                 if x1 < text_rect.left() || x0 > text_rect.right() {
                     continue;
                 }
                 let side = ((x1 - x0).min(row_h) - 4.0).max(3.0);
-                let cell = Rect::from_center_size(pos2((x0 + x1) / 2.0, y + row_h / 2.0), vec2(side, side));
+                let cell = Rect::from_center_size(pos2((x0 + x1) / 2.0, y + b.0 + row_h / 2.0), vec2(side, side));
                 painter.rect_stroke(cell, 1.5, Stroke::new(1.0, look.wide), StrokeKind::Inside);
             }
             if l.n == caret_line {
-                let x = origin_x + l.x(text, caret, true);
-                let bar = Rect::from_min_size(pos2(x - 1.0, y), vec2(2.0, row_h));
+                let p = l.pos(text, caret, true);
+                let bar = Rect::from_min_size(pos2(origin_x + p.x - 1.0, y + p.y), vec2(2.0, row_h));
                 painter.rect_filled(bar, 0.0, if keys { c.caret() } else { c.caret_idle() });
-                let at = origin_x + l.x(text, caret, false);
-                self.caret_rect = Rect::from_min_size(pos2(at, y), vec2(2.0, row_h));
+                let p = l.pos(text, caret, false);
+                self.caret_rect = Rect::from_min_size(pos2(origin_x + p.x, y + p.y), vec2(2.0, row_h));
             }
         }
-        self.page = ((text_rect.height() / row_h).floor() as usize).saturating_sub(1).max(1);
+        self.page = ((view_h / row_h).floor() as usize).saturating_sub(1).max(1);
 
         if let Some(t) = map {
             let look = ito_minimap::Look { row_h, font: font.clone() };
@@ -349,10 +487,11 @@ impl View {
                 let runs = t.lines.get(i).map_or(&[][..], |x| x.as_slice());
                 crate::structure::pieces(body, runs, &c).into_iter().map(|(s, k)| (s.to_owned(), k)).collect()
             };
-            let on_screen = ((text_rect.height() / row_h).ceil() as usize).min(total);
-            let shown = ito_minimap::show(ui, strip, text_rect, &t.rows, first, on_screen, &look, &line);
+            let on_screen = lines.len().min(total);
+            let shown = ito_minimap::show(ui, strip, text_rect, &t.rows, self.top, on_screen, &look, &line);
             if let Some(l) = shown.scroll_to {
-                self.scroll.y = l as f32 * row_h;
+                self.top = l;
+                self.sub = 0.0;
                 ui.ctx().request_repaint();
             }
         }
@@ -482,14 +621,15 @@ mod tests {
         let input = || egui::RawInput { screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))), ..Default::default() };
         let shown = |v: &View| {
             let top = 4999.0 * v.row_h;
-            top >= v.scroll.y && top + v.row_h <= v.scroll.y + 600.0
+            top >= v.scroll_y() && top + v.row_h <= v.scroll_y() + 600.0
         };
         let mut ed = Editor::new(&"line\n".repeat(6000));
         ed.go_to(5000, 1);
         let mut view = View::default();
-        let mut frame = |view: &mut View| ctx.run_ui(input(), |ui| view.show(ui, &mut ed, None, &[], false)).drop_without_applying_deltas();
+        let mut frame =
+            |view: &mut View| ctx.run_ui(input(), |ui| view.show(ui, &mut ed, None, &[], false, false)).drop_without_applying_deltas();
         frame(&mut view);
-        assert!(shown(&view), "line 5000 at {} with the view at {}", 4999.0 * view.row_h, view.scroll.y);
+        assert!(shown(&view), "line 5000 at {} with the view at {}", 4999.0 * view.row_h, view.scroll_y());
         // Another face: egui's own proportional one, a little lower than its monospace.
         let before = view.row_h;
         let mut fonts = egui::FontDefinitions::default();
@@ -498,7 +638,30 @@ mod tests {
         ctx.set_fonts(fonts);
         frame(&mut view);
         assert_ne!(view.row_h, before, "the test needs a face of another height");
-        assert!(shown(&view), "line 5000 at {} with the view at {}", 4999.0 * view.row_h, view.scroll.y);
+        assert!(shown(&view), "line 5000 at {} with the view at {}", 4999.0 * view.row_h, view.scroll_y());
+    }
+
+    /// 9.6: With word wrap a far caret is in view even when the lines above
+    /// it take more than one row, and the first line stays a line of the text.
+    #[test]
+    fn a_wrapped_far_caret_is_in_view() {
+        let ctx = egui::Context::default();
+        let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(300.0, 400.0))), ..Default::default() };
+        let mut ed = Editor::new(
+            &format!(
+                "{}
+",
+                "word ".repeat(40)
+            )
+            .repeat(300),
+        );
+        ed.go_to(200, 1);
+        let mut view = View::default();
+        for _ in 0..2 {
+            ctx.run_ui(input.clone(), |ui| view.show(ui, &mut ed, None, &[], false, true)).drop_without_applying_deltas();
+        }
+        assert!(view.top_line() <= 199 && view.top_line() >= 150, "top {}", view.top_line());
+        assert!(view.sub >= 0.0);
     }
 
     #[test]
