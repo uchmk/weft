@@ -98,7 +98,13 @@ impl Tree {
 }
 
 /// Read `text` (at `version`) whole.
+#[cfg(test)]
 pub fn read(version: u64, text: &str) -> Tree {
+    read_in(version, text, None)
+}
+
+/// [`read`] for a note in the folder `base`: its relative links are checked against it.
+pub fn read_in(version: u64, text: &str, base: Option<&std::path::Path>) -> Tree {
     let (kinds, breaks) = paint(text);
     let counts = crate::count::Index::new(text);
     let lines = lines(text, &kinds);
@@ -111,7 +117,7 @@ pub fn read(version: u64, text: &str) -> Tree {
         breaks: by_line(text, &breaks),
         chars: counts.total(),
         counts,
-        lint: crate::lint::run(text),
+        lint: crate::lint::run(text, base),
     }
 }
 
@@ -312,7 +318,7 @@ fn minimap_rows(text: &str, lines: &[Runs]) -> Vec<ito_minimap::Row> {
 /// The thread that reads the text. A job is the text at a version; while it
 /// reads, newer jobs pile up and only the newest is read next.
 pub struct Worker {
-    tx: Sender<(u64, String)>,
+    tx: Sender<(u64, String, Option<std::path::PathBuf>)>,
     rx: Receiver<Tree>,
     asked: Option<u64>,
 }
@@ -320,14 +326,14 @@ pub struct Worker {
 impl Worker {
     /// `wake` is called when a reading is ready (the window's repaint).
     pub fn new(wake: impl Fn() + Send + 'static) -> Worker {
-        let (tx, jobs) = mpsc::channel::<(u64, String)>();
+        let (tx, jobs) = mpsc::channel::<(u64, String, Option<std::path::PathBuf>)>();
         let (done, rx) = mpsc::channel();
         let run = move || {
             while let Ok(mut job) = jobs.recv() {
                 while let Ok(newer) = jobs.try_recv() {
                     job = newer;
                 }
-                if done.send(read(job.0, &job.1)).is_err() {
+                if done.send(read_in(job.0, &job.1, job.2.as_deref())).is_err() {
                     return;
                 }
                 wake();
@@ -339,12 +345,12 @@ impl Worker {
     }
 
     /// Ask for a reading of `text` at `version`, unless it was asked already.
-    pub fn ask(&mut self, version: u64, text: &str) {
+    pub fn ask(&mut self, version: u64, text: &str, base: Option<&std::path::Path>) {
         if self.asked == Some(version) {
             return;
         }
         self.asked = Some(version);
-        let _ = self.tx.send((version, text.to_owned()));
+        let _ = self.tx.send((version, text.to_owned(), base.map(|p| p.to_owned())));
     }
 
     /// The version last asked for.
@@ -474,9 +480,9 @@ mod tests {
     #[test]
     fn the_worker_reads_the_newest_and_asks_once_per_version() {
         let mut w = Worker::new(|| {});
-        w.ask(1, "a");
-        w.ask(2, "# b");
-        w.ask(2, "ignored: the same version");
+        w.ask(1, "a", None);
+        w.ask(2, "# b", None);
+        w.ask(2, "ignored: the same version", None);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
         let mut last = None;
         while last.as_ref().is_none_or(|t: &Tree| t.version < 2) {

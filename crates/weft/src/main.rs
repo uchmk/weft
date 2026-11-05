@@ -990,7 +990,7 @@ impl App {
         };
         if wait.is_zero() {
             self.doc.sent_at = Some(std::time::Instant::now());
-            self.doc.worker.ask(ed.version(), ed.text());
+            self.doc.worker.ask(ed.version(), ed.text(), ed.path().and_then(|p| p.parent()));
         } else if self.doc.worker.asked_version() != Some(ed.version()) {
             ctx.request_repaint_after(wait);
         }
@@ -1099,14 +1099,18 @@ impl App {
     }
 
     /// `lint.next` and `lint.prev` (the caret goes to the finding, whose kind
-    /// the status line says) and `lint.fix_all` (one undo step). The findings
-    /// are worked out from the text as it is, not taken from the newest reading.
+    /// the status line says) and `lint.fix_all` (one undo step), by the findings
+    /// of the text as it is.
     fn lint_command(&mut self, name: &str) {
         if !self.editing() {
             return;
         }
         let Some(ed) = self.doc.editor.as_mut() else { return };
-        let findings = lint::run(ed.text());
+        // The newest reading when it is of this text (it checked the links on the worker); else read here without touching the disk.
+        let findings = match self.doc.tree.as_ref().filter(|t| t.version == ed.version()) {
+            Some(t) => t.lint.clone(),
+            None => lint::run(ed.text(), None),
+        };
         let note = if name == "lint.fix_all" {
             let n = findings.iter().filter(|f| f.fix.is_some()).count();
             if n > 0 && ed.structure(|t, _| ito_mdlint::fix_all(t, &findings, None)) {

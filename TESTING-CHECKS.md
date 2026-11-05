@@ -1,6 +1,6 @@
 # Checklist
 
-178 checks in TESTING.md, 111 left for a person.
+179 checks in TESTING.md, 112 left for a person.
 
 ## 1. Start
 
@@ -217,3 +217,4 @@
 - [ ] **25.3** Press Shift+F8 → The caret goes to the previous finding 〔未訳〕
 - [ ] **25.4** Run "Fix all lint findings" from the palette, then Ctrl+Z once → The fixable ones are mended together; one undo restores the text 〔未訳〕
 - [ ] **25.5** Look at it in the light and the dark theme → The underlines read in both 〔未訳〕
+- [ ] **25.6** In a saved note, write `[a](gone.md)` with no such file next to it, and a link to a file that exists → Only the missing one is underlined; F8 names it "リンク先がありません" 〔未訳〕

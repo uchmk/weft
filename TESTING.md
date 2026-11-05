@@ -322,3 +322,4 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 25.3 | Press Shift+F8 | The caret goes to the previous finding |
 | 25.4 | Run "Fix all lint findings" from the palette, then Ctrl+Z once | The fixable ones are mended together; one undo restores the text |
 | 25.5 | Look at it in the light and the dark theme | The underlines read in both |
+| 25.6 | In a saved note, write `[a](gone.md)` with no such file next to it, and a link to a file that exists | Only the missing one is underlined; F8 names it "リンク先がありません" |
