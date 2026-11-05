@@ -1,6 +1,6 @@
 # Checklist
 
-157 checks in TESTING.md, 90 left for a person.
+161 checks in TESTING.md, 94 left for a person.
 
 ## 1. Start
 
@@ -181,3 +181,10 @@
 - [ ] **20.4** In the box press Enter → The file's text goes in as one undo step; Ctrl+Z brings your text back; the document still counts as changed 〔未訳〕
 - [ ] **20.5** Save with Ctrl+S → No box (the save is not taken as someone else's change) 〔未訳〕
 - [ ] **20.6** Change the file twice while the box is open → The box shows the latest contents 〔未訳〕
+
+## 21. Autosave and recovery
+
+- [ ] **21.1** Type in a file without saving, wait 3 seconds, end the process (Task Manager) → `recovery.toml` in the state folder holds the file's path and your text 〔未訳〕
+- [ ] **21.2** Start weft again → A box lists the file; Enter brings the text back as unsaved changes (Ctrl+Z returns the file's text), Esc leaves it 〔未訳〕
+- [ ] **21.3** Quit normally (even choosing not to save) → `recovery.toml` is empty; the next start asks nothing 〔未訳〕
+- [ ] **21.4** Save the file, wait 3 seconds → The file is no longer in `recovery.toml` 〔未訳〕

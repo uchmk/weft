@@ -276,3 +276,12 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 20.4 | In the box press Enter | The file's text goes in as one undo step; Ctrl+Z brings your text back; the document still counts as changed |
 | 20.5 | Save with Ctrl+S | No box (the save is not taken as someone else's change) |
 | 20.6 | Change the file twice while the box is open | The box shows the latest contents |
+
+## 21. Autosave and recovery
+
+| # | Do | Expect |
+|---|---|---|
+| 21.1 | Type in a file without saving, wait 3 seconds, end the process (Task Manager) | `recovery.toml` in the state folder holds the file's path and your text |
+| 21.2 | Start weft again | A box lists the file; Enter brings the text back as unsaved changes (Ctrl+Z returns the file's text), Esc leaves it |
+| 21.3 | Quit normally (even choosing not to save) | `recovery.toml` is empty; the next start asks nothing |
+| 21.4 | Save the file, wait 3 seconds | The file is no longer in `recovery.toml` |

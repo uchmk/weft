@@ -149,7 +149,7 @@ impl App {
     }
 
     pub(crate) fn external_open(&self) -> bool {
-        !self.asked.is_empty() && self.quit.is_none() && self.closing.is_none()
+        !self.asked.is_empty() && self.recover.is_empty() && self.quit.is_none() && self.closing.is_none()
     }
 
     /// The question's keys, read before anything else sees them: Esc keeps

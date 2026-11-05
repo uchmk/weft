@@ -196,6 +196,15 @@ keep = "Keep my text"
 load = "Load the file (Ctrl+Z undoes)"
 reloaded = "{0} was changed by another program: reloaded"
 
+# Text a run that did not exit cleanly had not saved.
+[recover]
+title = "Unsaved text found"
+body = "The last run ended with text not saved in these files:"
+# {0} files not listed.
+more = "and {0} more"
+leave = "Discard"
+restore = "Restore (not saved yet)"
+
 # Quitting with changes that are not saved.
 [quit]
 title = "Unsaved changes"

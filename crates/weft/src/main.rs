@@ -28,6 +28,7 @@ mod keymap;
 mod notify;
 mod prefs;
 mod preview;
+mod recovery;
 mod settings;
 mod structure;
 mod tabs;
@@ -241,6 +242,12 @@ struct App {
     dirwatch: ito_common::dirwatch::DirWatcher,
     watch_wait: Vec<(PathBuf, std::time::Instant)>,
     asked: Vec<external::Asked>,
+    /// Unsaved text copied for a crash (src/recovery.rs): where, what was
+    /// last copied, when, and what a crashed run left (the question's list).
+    recovery_writer: ito_common::kept::Writer,
+    recovery_marks: Vec<(PathBuf, u64)>,
+    recovery_at: std::time::Instant,
+    recover: Vec<recovery::Entry>,
     /// The file thread's way in and out.
     files: Sender<FileJob>,
     done: Receiver<FileDone>,
@@ -424,6 +431,13 @@ impl App {
             },
             watch_wait: Vec::new(),
             asked: Vec::new(),
+            recovery_writer: ito_common::kept::Writer::new(
+                recovery::state_path().unwrap_or_default(),
+                live && recovery::state_path().is_some(),
+            ),
+            recovery_marks: Vec::new(),
+            recovery_at: std::time::Instant::now() - std::time::Duration::from_secs(60),
+            recover: if live || std::env::var_os("WEFT_STATE_HOME").is_some() { recovery::read() } else { Vec::new() },
             files,
             done,
             started: std::time::Instant::now(),
@@ -492,6 +506,10 @@ impl App {
             dirwatch: ito_common::dirwatch::DirWatcher::new(|| {}),
             watch_wait: Vec::new(),
             asked: Vec::new(),
+            recovery_writer: ito_common::kept::Writer::new(PathBuf::new(), false),
+            recovery_marks: Vec::new(),
+            recovery_at: std::time::Instant::now() - std::time::Duration::from_secs(60),
+            recover: Vec::new(),
             files,
             done,
             started: std::time::Instant::now(),
@@ -663,7 +681,7 @@ impl App {
     /// bare key for the keymap, unless a widget (a field of the settings) has
     /// the focus and reads it.
     fn read_keys(&mut self, ctx: &egui::Context) {
-        if self.palette.is_some() || self.quit.is_some() || self.closing.is_some() || self.external_open() {
+        if self.palette.is_some() || self.quit.is_some() || self.closing.is_some() || self.external_open() || self.recover_open() {
             return;
         }
         let focused = ctx.memory(|m| m.focused().is_some());
@@ -1490,6 +1508,7 @@ impl eframe::App for App {
     /// while a script ran, the done file that says so (else the lane waits
     /// out its timeout).
     fn on_exit(&mut self) {
+        self.clear_recovery();
         // Written now rather than on the tracker's clock.
         if let Some(t) = &mut self.tracker {
             t.close(None);
@@ -1514,6 +1533,7 @@ impl App {
         self.clicked();
         self.take_files(&ctx);
         self.take_external(&ctx);
+        self.take_recovery(&ctx);
         self.take_door(&ctx);
         self.quit_after_save(&ctx);
         // The window's close (the bar's ×, Alt+F4) asks first, as Ctrl+Q does.
@@ -1529,6 +1549,7 @@ impl App {
         if self.closing.is_some() {
             self.closing_keys(&ctx);
         }
+        self.recover_keys(&ctx);
         self.external_keys(&ctx);
         if self.editing() {
             // The document takes the keys without a widget's focus: one left
@@ -1608,6 +1629,7 @@ impl App {
         self.quit_question(&ctx);
         self.closing_question(&ctx);
         self.external_question(&ctx);
+        self.recover_question(&ctx);
         // What the screen reader hears (and `--keys`' <Announced:> checks).
         for m in std::mem::take(&mut self.said) {
             ito_a11y::announce(ui, &m);
@@ -1932,6 +1954,34 @@ mod tests {
         let (left, right) = app.status_items(false);
         assert!(words(&left).contains(&"Read-only".to_owned()), "{left:?}");
         assert_eq!(words(&right), ["Not UTF-8", "LF"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 21.x: text a crashed run had not saved comes back as unsaved changes
+    /// (one undo step), or is left.
+    #[test]
+    fn unsaved_text_of_a_crashed_run_is_restored_or_left() {
+        let dir = std::env::temp_dir().join(format!("weft-recover-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.md");
+        std::fs::write(&file, "one\ntwo\n").unwrap();
+        let mut app = App::for_tests();
+        app.recover = vec![recovery::Entry { path: file.clone(), text: "one\ntwo\nthree\n".to_owned() }];
+        assert!(app.recover_open());
+        app.answer_recover(1);
+        assert!(!app.recover_open());
+        let ed = app.doc.editor.as_mut().unwrap();
+        assert_eq!(ed.text(), "one\ntwo\nthree\n");
+        assert!(ed.is_dirty(), "still not saved");
+        assert!(ed.undo());
+        assert_eq!(ed.text(), "one\ntwo\n");
+        // Left: the file stays as it is.
+        let mut app = App::for_tests();
+        app.recover = vec![recovery::Entry { path: file.clone(), text: "x\n".to_owned() }];
+        app.answer_recover(0);
+        assert!(!app.recover_open());
+        assert!(app.doc.editor.is_none());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "one\ntwo\n");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

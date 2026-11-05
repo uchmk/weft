@@ -123,7 +123,13 @@ impl Editor {
     /// was put in (locked, or the text is the same).
     pub fn reload(&mut self, raw: &str, clean: bool) -> bool {
         self.disk = Arc::new(raw.to_owned());
-        let new = raw.strip_prefix('\u{feff}').unwrap_or(raw);
+        self.put_text(raw.strip_prefix('\u{feff}').unwrap_or(raw), clean)
+    }
+
+    /// [`reload`](Self::reload) for text that did not come from the file
+    /// (what a crashed run had not saved): the same one undo step over the
+    /// part that differs, `disk` left as it is.
+    pub fn put_text(&mut self, new: &str, clean: bool) -> bool {
         let old = self.doc.text();
         let lead = old.bytes().zip(new.bytes()).take_while(|(a, b)| a == b).count();
         let start = (0..=lead).rev().find(|&i| old.is_char_boundary(i) && new.is_char_boundary(i)).unwrap_or(0);
@@ -765,6 +771,17 @@ mod tests {
         assert!(e.is_dirty());
         assert!(e.undo());
         assert_eq!(e.text(), "あ\r\nい\r\n");
+    }
+
+    #[test]
+    fn put_text_is_one_undo_step_and_leaves_the_disk_text_alone() {
+        let mut e = at("one\ntwo\n", 0);
+        assert!(e.put_text("one\ntwo\nthree\n", false));
+        assert_eq!(e.text(), "one\ntwo\nthree\n");
+        assert!(e.is_dirty());
+        assert_eq!(e.disk(), "one\ntwo\n");
+        assert!(e.undo());
+        assert_eq!(e.text(), "one\ntwo\n");
     }
 
     #[test]
