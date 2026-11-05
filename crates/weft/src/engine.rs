@@ -87,6 +87,13 @@ pub struct Editor {
 /// The tab width a document starts with, until the settings say otherwise.
 pub const TAB_WIDTH: usize = 4;
 
+/// `text` when it is one web or mail address and nothing else.
+fn as_url(text: &str) -> Option<&str> {
+    let t = text.trim();
+    let known = ["http://", "https://", "mailto:"].iter().any(|p| t.len() > p.len() && t[..p.len()].eq_ignore_ascii_case(p));
+    (known && !t.contains(char::is_whitespace) && !t.contains(['(', ')', '<', '>'])).then_some(t)
+}
+
 impl Editor {
     /// A document of `text` with no file behind it.
     pub fn new(text: &str) -> Editor {
@@ -437,6 +444,12 @@ impl Editor {
     /// Paste: the line breaks become the text's own, and the paste is one
     /// undo step.
     pub fn paste(&mut self, text: &str, now_ms: u64) -> bool {
+        // A URL over a selected word makes the word a link.
+        if let (Some(sel), Some(url)) = (self.selected_text(), as_url(text)) {
+            if !sel.contains(char::is_control) {
+                return self.commit(&format!("[{sel}]({url})"), now_ms);
+            }
+        }
         let unified = text.replace("\r\n", "\n");
         let text = match self.doc.buffer().newline() {
             "\n" => unified,
@@ -907,6 +920,26 @@ mod tests {
         assert_eq!(e.text(), "a\nb1\n2");
         assert!(e.undo());
         assert_eq!(e.text(), "a\nb");
+    }
+
+    #[test]
+    fn a_url_pasted_over_a_selection_makes_it_a_link() {
+        let mut e = at("see 日本語 now", 4);
+        for _ in 0..3 {
+            e.move_caret(Motion::Right, true);
+        }
+        assert!(e.paste(" https://example.com/a?b=1 ", 0));
+        assert_eq!(e.text(), "see [日本語](https://example.com/a?b=1) now");
+        assert!(e.undo());
+        assert_eq!(e.text(), "see 日本語 now");
+        // Without a selection, or for text that is not one address, it is plain paste.
+        let mut e = at("x", 1);
+        assert!(e.paste("https://example.com", 0));
+        assert_eq!(e.text(), "xhttps://example.com");
+        let mut e = at("word", 0);
+        e.select_all();
+        assert!(e.paste("https://a.b and more", 0));
+        assert_eq!(e.text(), "https://a.b and more");
     }
 
     #[test]

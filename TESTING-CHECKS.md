@@ -1,6 +1,6 @@
 # Checklist
 
-166 checks in TESTING.md, 99 left for a person.
+168 checks in TESTING.md, 101 left for a person.
 
 ## 1. Start
 
@@ -188,6 +188,11 @@
 - [ ] **21.2** Start weft again → A box lists the file; Enter brings the text back as unsaved changes (Ctrl+Z returns the file's text), Esc leaves it 〔未訳〕
 - [ ] **21.3** Quit normally (even choosing not to save) → `recovery.toml` is empty; the next start asks nothing 〔未訳〕
 - [ ] **21.4** Save the file, wait 3 seconds → The file is no longer in `recovery.toml` 〔未訳〕
+
+## 23. Paste a URL over a selection
+
+- [ ] **23.1** Select a word, paste a copied `https://…` address → The word becomes `[word](https://…)`; Ctrl+Z restores the word 〔未訳〕
+- [ ] **23.2** Paste the same address with nothing selected → The address is pasted as is 〔未訳〕
 
 ## 22. Image paste
 
