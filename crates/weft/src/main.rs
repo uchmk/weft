@@ -22,13 +22,13 @@ mod engine;
 mod envreport;
 mod external;
 mod find;
+mod finder;
 mod fold;
 mod foldkeep;
 mod help;
 mod i18n;
 mod icon;
 mod image;
-#[allow(dead_code)] // the index waits for backlinks and the vault search
 mod index;
 mod keymap;
 mod lint;
@@ -314,6 +314,8 @@ struct App {
     bell_at: egui::Rect,
     /// The command palette while it is open (Ctrl+Shift+P, or the bar's box).
     palette: Option<ito_palette::View>,
+    /// The vault search or the backlinks list, with its box.
+    finder: Option<(finder::Finder, ito_palette::View)>,
     /// The `[[` note list at the caret.
     complete: vault::Completion,
     /// Whether the input method is on and its input mode, as the status bar
@@ -504,6 +506,7 @@ impl App {
             bell_open: false,
             bell_at: egui::Rect::NOTHING,
             palette: None,
+            finder: None,
             complete: Default::default(),
             ime: None,
             script,
@@ -579,6 +582,7 @@ impl App {
             bell_open: false,
             bell_at: egui::Rect::NOTHING,
             palette: None,
+            finder: None,
             complete: Default::default(),
             ime: None,
             script: None,
@@ -608,6 +612,7 @@ impl App {
             && !self.settings_open
             && !self.help.open
             && self.palette.is_none()
+            && self.finder.is_none()
             && !self.bell_open
             && self.quit.is_none()
             && self.closing.is_none()
@@ -743,7 +748,13 @@ impl App {
     /// bare key for the keymap, unless a widget (a field of the settings) has
     /// the focus and reads it.
     fn read_keys(&mut self, ctx: &egui::Context) {
-        if self.palette.is_some() || self.quit.is_some() || self.closing.is_some() || self.external_open() || self.recover_open() {
+        if self.palette.is_some()
+            || self.finder.is_some()
+            || self.quit.is_some()
+            || self.closing.is_some()
+            || self.external_open()
+            || self.recover_open()
+        {
             return;
         }
         let focused = ctx.memory(|m| m.focused().is_some());
@@ -880,6 +891,8 @@ impl App {
             "heading.fold" | "heading.fold_all" | "heading.unfold_all" => self.fold_command(name),
             "view.focus" => self.focus_toggle(),
             "link.follow" => self.follow_link(),
+            "vault.search" => self.open_finder(finder::Kind::Search),
+            "vault.backlinks" => self.open_finder(finder::Kind::Backlinks),
             "lint.next" | "lint.prev" | "lint.fix_all" => self.lint_command(name),
             ito_find::cmd::OPEN
             | ito_find::cmd::REPLACE_OPEN
@@ -1191,6 +1204,59 @@ impl App {
         self.open(&path);
         if let Some(line) = line {
             Goto { line, col: 1 }.apply(self);
+        }
+    }
+
+    /// `vault.search` and `vault.backlinks`: the list over the vault's index.
+    /// The index is brought up to date on a worker; the box waits for it.
+    fn open_finder(&mut self, kind: finder::Kind) {
+        if !self.uncovered() {
+            return;
+        }
+        let Some(from) = self.doc.path() else {
+            let note = self.table.tr("finder.no_vault").to_owned();
+            self.announce(note.clone());
+            self.note = Some(note);
+            return;
+        };
+        let root = vault::root_of(&from);
+        let rel = from.strip_prefix(&root).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+        match finder::Finder::open(kind, root, rel) {
+            Ok(f) => self.finder = Some((f, ito_palette::View::new())),
+            Err(e) => {
+                let note = self.table.trf("finder.failed", &[&e]);
+                self.announce(note.clone());
+                self.note = Some(note);
+            }
+        }
+    }
+
+    /// The finder's box while it is open: it takes the keys, and a pick opens
+    /// the note at the line.
+    fn finder_box(&mut self, ctx: &egui::Context) {
+        let Some((mut f, mut view)) = self.finder.take() else { return };
+        view.filter = false;
+        let waiting = f.update(&view.query);
+        if waiting {
+            ctx.request_repaint_after(std::time::Duration::from_millis(60));
+        }
+        let (hint, none) = match (f.kind, waiting) {
+            (_, true) => ("finder.search_hint", "finder.indexing"),
+            (finder::Kind::Search, false) => ("finder.search_hint", "finder.none"),
+            (finder::Kind::Backlinks, false) => ("finder.links_hint", "finder.no_links"),
+        };
+        let hint = if f.kind == finder::Kind::Backlinks { "finder.links_hint" } else { hint };
+        let words = ito_palette::Words { hint: self.table.tr(hint), none: self.table.tr(none), header: "", footer: "" };
+        let answer = ito_palette::show(ctx, &mut view, if waiting { &[] } else { &f.entries }, &palette_style(), &words);
+        match answer {
+            None => self.finder = Some((f, view)),
+            Some(ito_palette::Answer::Pick(hit)) => {
+                self.open(&f.root.join(&hit.path));
+                if let Some(line) = hit.line {
+                    Goto { line: line + 1, col: 1 }.apply(self);
+                }
+            }
+            Some(_) => {}
         }
     }
 
@@ -1587,17 +1653,7 @@ impl App {
             self.palette = Some(ito_palette::View::new());
         }
         let Some(mut view) = self.palette.take() else { return };
-        let c = ito_theme::colors();
-        let style = ito_palette::Style {
-            panel: c.raised(),
-            border: c.border,
-            text: c.fg,
-            dim: c.dim,
-            selected_bg: c.chosen(),
-            selected_text: c.strong(),
-            hit: c.wait,
-            accent: c.done,
-        };
+        let style = palette_style();
         let words = ito_palette::Words { hint: self.table.tr("palette.hint"), none: self.table.tr("palette.none"), header: "", footer: "" };
         match ito_palette::show(ctx, &mut view, &self.commands(), &style, &words) {
             None => self.palette = Some(view),
@@ -1798,6 +1854,7 @@ impl App {
         self.notice_list(&ctx);
         if !taking {
             self.command_palette(&ctx);
+            self.finder_box(&ctx);
         }
         if self.settings_open {
             settings::show(ui, self);
@@ -2052,6 +2109,21 @@ fn main() -> eframe::Result {
             Ok(Box::new(app))
         }),
     )
+}
+
+/// The palette box's colours, from the theme.
+fn palette_style() -> ito_palette::Style {
+    let c = ito_theme::colors();
+    ito_palette::Style {
+        panel: c.raised(),
+        border: c.border,
+        text: c.fg,
+        dim: c.dim,
+        selected_bg: c.chosen(),
+        selected_text: c.strong(),
+        hit: c.wait,
+        accent: c.done,
+    }
 }
 
 #[cfg(test)]

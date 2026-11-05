@@ -86,6 +86,8 @@ pub const ALL: &[Def] = &[
     app("heading.unfold_all", "Unfold all sections"),
     app("view.focus", "Show only this section"),
     app("link.follow", "Open the linked note"),
+    app("vault.search", "Search every note"),
+    app("vault.backlinks", "Show the notes that link here"),
     app("lint.next", "Next lint finding"),
     app("lint.prev", "Previous lint finding"),
     app("lint.fix_all", "Fix all lint findings"),

@@ -186,6 +186,16 @@ run = "link.follow"
 desc = "Open the linked note"
 
 [[app.keymap]]
+on = "<C-S-f>"
+run = "vault.search"
+desc = "Search every note"
+
+[[app.keymap]]
+on = "<C-S-b>"
+run = "vault.backlinks"
+desc = "Show the notes that link here"
+
+[[app.keymap]]
 on = "<F8>"
 run = "lint.next"
 desc = "Next lint finding"
