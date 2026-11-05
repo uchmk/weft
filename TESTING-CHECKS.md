@@ -1,6 +1,6 @@
 # Checklist
 
-139 checks in TESTING.md, 74 left for a person.
+142 checks in TESTING.md, 76 left for a person.
 
 ## 1. Start
 
@@ -146,3 +146,10 @@
 - [ ] **15.7** Open an empty file with the preview on → The pane says there is nothing to preview 〔未訳〕
 - [ ] **15.8** Type in a large file with the preview open → Typing never waits; the preview catches up 〔未訳〕
 - [ ] **15.9** Look at the pane in the light and the dark theme, with long Japanese lines, a wide table and a code block, and while resizing → Lines wrap at the pane's width; colours are the theme's; nothing overlaps 〔未訳〕
+
+## 16. Minimap
+
+自動テスト済みなので下には出していない: 16.1
+
+- [ ] **16.2** Click and drag in the strip → The source scrolls there; no caret is put by the click; hovering shows the lines around the pointer 〔未訳〕
+- [ ] **16.3** Narrow the window, or open the preview until the source is narrow → The strip goes away and the text takes the room 〔未訳〕

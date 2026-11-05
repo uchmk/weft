@@ -69,6 +69,8 @@ ito-find = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab
 ito-match = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The rendered preview: Markdown laid out on a cell grid, and its egui painter.
 ito-mdview = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["egui"] }
+# The minimap: a strip down the source's right edge, the part on screen framed, click or drag to jump.
+ito-minimap = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["egui"] }
 # The structure commands (blocks, sections, lists, tasks, tables) as `Change`s.
 ito-mdedit = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The colours of fenced code.

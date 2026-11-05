@@ -233,3 +233,11 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 15.7 | Open an empty file with the preview on | The pane says there is nothing to preview |
 | 15.8 | Type in a large file with the preview open | Typing never waits; the preview catches up |
 | 15.9 | Look at the pane in the light and the dark theme, with long Japanese lines, a wide table and a code block, and while resizing | Lines wrap at the pane's width; colours are the theme's; nothing overlaps |
+
+## 16. Minimap
+
+| # | Do | Expect |
+|---|---|---|
+| 16.1 | Open a document of a few hundred lines in a wide window | A strip at the right edge shows each line as a band in its colour; the frame marks what is on screen |
+| 16.2 | Click and drag in the strip | The source scrolls there; no caret is put by the click; hovering shows the lines around the pointer |
+| 16.3 | Narrow the window, or open the preview until the source is narrow | The strip goes away and the text takes the room |

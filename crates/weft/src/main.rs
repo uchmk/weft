@@ -1975,7 +1975,7 @@ mod tests {
             let ed = app.doc.editor.as_ref().unwrap();
             let counts = count::Index::new(ed.text());
             let (version, chars) = (ed.version(), counts.total());
-            structure::Tree { version, headings: Vec::new(), lines: Vec::new(), breaks: Vec::new(), chars, counts }
+            structure::Tree { version, headings: Vec::new(), lines: Vec::new(), rows: Vec::new(), breaks: Vec::new(), chars, counts }
         };
         let near = 2 * (count::STEP + 64);
         let mut app = App::for_tests();

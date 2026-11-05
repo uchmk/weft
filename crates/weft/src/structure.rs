@@ -72,6 +72,9 @@ pub struct Tree {
     pub headings: Vec<ito_outline::Heading>,
     /// By line (split at `\n`, a `\r` before it left out).
     pub lines: Vec<Runs>,
+    /// The minimap's row of every line (same indexing as `lines`), in the
+    /// colours the theme had when this was read.
+    pub rows: Vec<ito_minimap::Row>,
     /// The spaces (or tabs) at the end of a line that Markdown reads as a
     /// hard line break, easy to leave by mistake and not seen: `(line, bytes
     /// from the line's start)`, by line, one at most per line. A backslash
@@ -96,14 +99,9 @@ impl Tree {
 pub fn read(version: u64, text: &str) -> Tree {
     let (kinds, breaks) = paint(text);
     let counts = crate::count::Index::new(text);
-    Tree {
-        version,
-        headings: ito_outline::headings(text, 6),
-        lines: lines(text, &kinds),
-        breaks: by_line(text, &breaks),
-        chars: counts.total(),
-        counts,
-    }
+    let lines = lines(text, &kinds);
+    let rows = minimap_rows(text, &lines);
+    Tree { version, headings: ito_outline::headings(text, 6), rows, lines, breaks: by_line(text, &breaks), chars: counts.total(), counts }
 }
 
 fn fill(kinds: &mut [Option<Kind>], r: Range<usize>, k: Option<Kind>) {
@@ -259,6 +257,47 @@ fn lines(text: &str, kinds: &[Option<Kind>]) -> Vec<Runs> {
     out
 }
 
+/// A line cut into `(text, colour)` pieces by its runs; the gaps have no colour.
+pub fn pieces<'a>(line: &'a str, runs: &[(Range<usize>, Kind)], c: &ito_theme::Colors) -> Vec<(&'a str, Option<[u8; 3]>)> {
+    let mut out = Vec::with_capacity(runs.len() * 2 + 1);
+    let mut at = 0;
+    for (r, kind) in runs {
+        let (s, e) = (floor_char(line, r.start.min(line.len())), floor_char(line, r.end.min(line.len())));
+        if s < at || s >= e {
+            continue;
+        }
+        if s > at {
+            out.push((&line[at..s], None));
+        }
+        let col = kind.color(c);
+        out.push((&line[s..e], Some([col.r(), col.g(), col.b()])));
+        at = e;
+    }
+    if at < line.len() {
+        out.push((&line[at..], None));
+    }
+    out
+}
+
+fn floor_char(s: &str, mut i: usize) -> usize {
+    while !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// The minimap's rows, one per line of `text`.
+fn minimap_rows(text: &str, lines: &[Runs]) -> Vec<ito_minimap::Row> {
+    let c = ito_theme::colors();
+    text.split('\n')
+        .enumerate()
+        .map(|(n, line)| {
+            let body = line.strip_suffix('\r').unwrap_or(line);
+            ito_minimap::row(pieces(body, lines.get(n).map_or(&[][..], |r| r.as_slice()), &c))
+        })
+        .collect()
+}
+
 /// The thread that reads the text. A job is the text at a version; while it
 /// reads, newer jobs pile up and only the newest is read next.
 pub struct Worker {
@@ -312,6 +351,17 @@ mod tests {
     fn runs<'a>(text: &'a str, t: &Tree, n: usize) -> Vec<(&'a str, Kind)> {
         let line = text.split('\n').nth(n).unwrap();
         t.lines[n].iter().map(|(r, k)| (&line[r.clone()], *k)).collect()
+    }
+
+    /// 16.1: Every line has a row; a heading's row is coloured, a blank one is empty.
+    #[test]
+    fn the_minimap_has_a_row_per_line() {
+        let text = "# Title\r\n\r\n    plain text\r\n";
+        let t = read(1, text);
+        assert_eq!(t.rows.len(), text.split('\n').count());
+        assert!(t.rows[0].color.is_some() && t.rows[0].len == 7);
+        assert_eq!(t.rows[1].len, 0);
+        assert_eq!(t.rows[2].indent, 4);
     }
 
     #[test]

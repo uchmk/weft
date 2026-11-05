@@ -176,7 +176,11 @@ impl View {
         let total = ed.line_count();
         let digits = total.to_string().len().max(2);
         let gutter = digits as f32 * char_w + 2.0 * PAD;
-        let text_rect = Rect::from_min_max(pos2(rect.left() + gutter, rect.top()), rect.max);
+        // The minimap takes the right edge when the pane is wide enough for both.
+        let map = tree.filter(|t| ito_minimap::fits(t.rows.len(), rect.width() - gutter, char_w));
+        let strip_w = map.map_or(0.0, |_| ito_minimap::strip_width(char_w));
+        let text_rect = Rect::from_min_max(pos2(rect.left() + gutter, rect.top()), pos2(rect.right() - strip_w, rect.bottom()));
+        let strip = Rect::from_min_max(pos2(text_rect.right(), rect.top()), rect.max);
         let text_left = text_rect.left() + PAD;
         let view_w = (text_rect.width() - 2.0 * PAD).max(char_w);
 
@@ -242,7 +246,7 @@ impl View {
         }
 
         // --- The mouse: a click puts the caret, a drag (or Shift+click) selects.
-        if keys && !lines.is_empty() && response.is_pointer_button_down_on() {
+        if keys && !lines.is_empty() && response.is_pointer_button_down_on() && !ui.rect_contains_pointer(strip) {
             let (pressed, primary, shift) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down(), i.modifiers.shift));
             if let (true, Some(p)) = (primary, response.interact_pointer_pos()) {
                 let row = ((p.y - y0) / row_h).floor().max(0.0) as usize;
@@ -336,6 +340,22 @@ impl View {
             }
         }
         self.page = ((text_rect.height() / row_h).floor() as usize).saturating_sub(1).max(1);
+
+        if let Some(t) = map {
+            let look = ito_minimap::Look { row_h, font: font.clone() };
+            let line = |i: usize| -> Vec<(String, Option<[u8; 3]>)> {
+                let Some(r) = ed.line_range(i) else { return Vec::new() };
+                let body = text[r.clone()].trim_end_matches(['\r', '\n']);
+                let runs = t.lines.get(i).map_or(&[][..], |x| x.as_slice());
+                crate::structure::pieces(body, runs, &c).into_iter().map(|(s, k)| (s.to_owned(), k)).collect()
+            };
+            let on_screen = ((text_rect.height() / row_h).ceil() as usize).min(total);
+            let shown = ito_minimap::show(ui, strip, text_rect, &t.rows, first, on_screen, &look, &line);
+            if let Some(l) = shown.scroll_to {
+                self.scroll.y = l as f32 * row_h;
+                ui.ctx().request_repaint();
+            }
+        }
     }
 }
 
