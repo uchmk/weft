@@ -21,6 +21,7 @@ mod engine;
 mod envreport;
 mod external;
 mod find;
+mod fold;
 mod help;
 mod i18n;
 mod icon;
@@ -829,6 +830,7 @@ impl App {
                     self.tab_op(op);
                 }
             }
+            "heading.fold" | "heading.fold_all" | "heading.unfold_all" => self.fold_command(name),
             ito_find::cmd::OPEN
             | ito_find::cmd::REPLACE_OPEN
             | ito_find::cmd::NEXT
@@ -1059,6 +1061,39 @@ impl App {
             out.push_str(&format!("text: {text}\n"));
         }
         out
+    }
+
+    /// `heading.fold` (the section the caret is in; the caret goes to its
+    /// heading), `heading.fold_all` and `heading.unfold_all`.
+    fn fold_command(&mut self, name: &str) {
+        if !self.editing() {
+            return;
+        }
+        let doc = &mut self.doc;
+        let (Some(ed), Some(tree)) = (doc.editor.as_mut(), doc.tree.as_ref()) else { return };
+        match name {
+            "heading.fold" => {
+                let Some(i) = ito_outline::at_byte(&tree.headings, ed.caret()) else { return };
+                let h = &tree.headings[i];
+                doc.view.folds.toggle(tree, i);
+                // A caret in the body would sit in hidden lines: it goes to the heading.
+                if ed.caret() > h.range.end {
+                    ed.set_caret(h.range.start, false);
+                }
+            }
+            "heading.fold_all" => {
+                doc.view.folds.set_all(tree, true);
+                // The outermost section holding the caret is the one left showing it.
+                let caret = ed.caret();
+                if let Some(h) = tree.headings.iter().find(|h| h.section.contains(&caret)) {
+                    if caret > h.range.end {
+                        ed.set_caret(h.range.start, false);
+                    }
+                }
+            }
+            _ => doc.view.folds.set_all(tree, false),
+        }
+        doc.view.follow = true;
     }
 
     /// The title of the section the caret is in, by the newest reading.

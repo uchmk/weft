@@ -302,3 +302,13 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 22.3 | Press Ctrl+Z | The link is gone in one step |
 | 22.4 | Copy text only, press Alt+Shift+V | A notice: the clipboard has no picture |
 | 22.5 | In a note without a file, press Alt+Shift+V | A notice that the document has no file yet |
+
+## 24. Folding headings
+
+| # | Do | Expect |
+|---|---|---|
+| 24.1 | Put the caret in a section's body and press Alt+F | The body lines disappear; the heading shows `… <lines hidden>` and holds the caret |
+| 24.2 | Press Alt+F on the folded heading | The lines come back |
+| 24.3 | Fold a section, then press Down from its heading | The fold opens and the caret is on the next line |
+| 24.4 | Fold a section, add a heading above it | The section stays folded |
+| 24.5 | Run "Fold all sections" and then "Unfold all sections" from the palette | Every section folds (the top-level headings show) and then all open |

@@ -1,6 +1,6 @@
 # Checklist
 
-168 checks in TESTING.md, 101 left for a person.
+173 checks in TESTING.md, 106 left for a person.
 
 ## 1. Start
 
@@ -201,3 +201,11 @@
 - [ ] **22.3** Press Ctrl+Z → The link is gone in one step 〔未訳〕
 - [ ] **22.4** Copy text only, press Alt+Shift+V → A notice: the clipboard has no picture 〔未訳〕
 - [ ] **22.5** In a note without a file, press Alt+Shift+V → A notice that the document has no file yet 〔未訳〕
+
+## 24. Folding headings
+
+- [ ] **24.1** Put the caret in a section's body and press Alt+F → The body lines disappear; the heading shows `… <lines hidden>` and holds the caret 〔未訳〕
+- [ ] **24.2** Press Alt+F on the folded heading → The lines come back 〔未訳〕
+- [ ] **24.3** Fold a section, then press Down from its heading → The fold opens and the caret is on the next line 〔未訳〕
+- [ ] **24.4** Fold a section, add a heading above it → The section stays folded 〔未訳〕
+- [ ] **24.5** Run "Fold all sections" and then "Unfold all sections" from the palette → Every section folds (the top-level headings show) and then all open 〔未訳〕

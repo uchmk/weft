@@ -171,6 +171,11 @@ run = "replace.one"
 desc = "Replace this match"
 
 [[app.keymap]]
+on = "<A-f>"
+run = "heading.fold"
+desc = "Fold or unfold this section"
+
+[[app.keymap]]
 on = "<C-A-Enter>"
 run = "replace.all"
 desc = "Replace all"

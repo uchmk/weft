@@ -111,6 +111,8 @@ struct Lay<'a> {
     plain: &'a TextFormat,
     wrap: Option<f32>,
     row_h: f32,
+    /// The lines of folded sections: they take no room.
+    hidden: &'a [crate::fold::Hidden],
 }
 
 impl Lay<'_> {
@@ -139,6 +141,9 @@ impl Lay<'_> {
 
     /// The height of line `n`.
     fn height(&self, n: usize) -> f32 {
+        if self.hidden.iter().any(|h| h.lines.contains(&n)) {
+            return 0.0;
+        }
         if self.wrap.is_none() {
             return self.row_h;
         }
@@ -165,6 +170,8 @@ pub struct View {
     /// What changed since the file was read or saved, one entry per line (the
     /// gutter's bars). May be a version behind the text.
     changes: crate::changes::Changes,
+    /// The headings folded away.
+    pub folds: crate::fold::Folds,
 }
 
 impl Default for View {
@@ -179,6 +186,7 @@ impl Default for View {
             caret_rect: Rect::NOTHING,
             ime: ito_ime::Ime::new(Id::new("weft-editor")),
             changes: crate::changes::Changes::default(),
+            folds: crate::fold::Folds::default(),
         }
     }
 }
@@ -304,7 +312,11 @@ impl View {
         let caret_line = ed.line_of(ed.caret());
         let caret_byte = ed.caret();
         let comp = |n: usize| (n == caret_line && !preedit.is_empty()).then_some((caret_byte, preedit.as_str(), &ime_format));
-        let lay = Lay { ui, ed, tree, colors: &c, plain: &plain, wrap: wrap.then_some(view_w), row_h };
+        // A caret in folded lines opens the fold; else the folds follow the newest reading.
+        self.folds.reveal(caret_line);
+        self.folds.refresh(tree, ed);
+        let hidden = self.folds.hidden().to_vec();
+        let lay = Lay { ui, ed, tree, colors: &c, plain: &plain, wrap: wrap.then_some(view_w), row_h, hidden: &hidden };
         let h = |n: usize| lay.height(n);
 
         // --- Scrolling: the wheel, then the caret.
@@ -365,6 +377,9 @@ impl View {
         for n in self.top..total {
             if off - self.sub >= view_h {
                 break;
+            }
+            if lay.height(n) == 0.0 {
+                continue;
             }
             let Some(l) = lay.line(n, off, comp(n)) else { break };
             off += l.h;
@@ -477,6 +492,10 @@ impl View {
                 }
             }
             painter.galley(pos2(origin_x, y), l.galley.clone(), c.fg);
+            if let Some(n) = self.folds.hides(l.n) {
+                let x = origin_x + l.galley.size().x + char_w;
+                painter.text(pos2(x, y), Align2::LEFT_TOP, format!("… {n}"), font.clone(), c.gutter());
+            }
             if let Some(r) = &marks.brk {
                 for ch in r.clone() {
                     if let Some(&b) = l.bands(at(ch, false), at(ch + 1, true)).first() {
@@ -513,7 +532,7 @@ impl View {
                 let runs = t.lines.get(i).map_or(&[][..], |x| x.as_slice());
                 crate::structure::pieces(body, runs, &c).into_iter().map(|(s, k)| (s.to_owned(), k)).collect()
             };
-            let on_screen = lines.len().min(total);
+            let on_screen = lines.last().map_or(0, |l| l.n + 1 - self.top).min(total);
             let shown = ito_minimap::show(ui, strip, text_rect, &t.rows, self.top, on_screen, &look, &line);
             if let Some(l) = shown.scroll_to {
                 self.top = l;
