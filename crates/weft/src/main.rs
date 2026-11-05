@@ -19,6 +19,7 @@ mod count;
 mod door;
 mod engine;
 mod envreport;
+mod external;
 mod find;
 mod help;
 mod i18n;
@@ -80,6 +81,10 @@ fn type_scale(style: &mut egui::Style) {
 /// What the file thread does, in the order it was asked.
 enum FileJob {
     Save(engine::SaveJob),
+    /// Read what the file holds now (someone else may have changed it).
+    Check {
+        path: PathBuf,
+    },
     /// `$EDITOR` at the caret. After a save that failed, it is not run: the
     /// editor would open what is on the disk, not what the window shows.
     Open {
@@ -92,7 +97,18 @@ enum FileJob {
 
 /// What came back from the file thread.
 enum FileDone {
-    Saved { version: u64, path: PathBuf, result: Result<(), String> },
+    /// `bytes` is what was written (BOM and all): what the file holds now.
+    Saved {
+        version: u64,
+        path: PathBuf,
+        result: Result<(), String>,
+        bytes: String,
+    },
+    /// What the file holds, `None` when it is gone or not UTF-8.
+    Disk {
+        path: PathBuf,
+        raw: Option<String>,
+    },
     OpenFailed(String),
 }
 
@@ -108,7 +124,11 @@ fn file_thread(ctx: egui::Context) -> (Sender<FileJob>, Receiver<FileDone>) {
                 FileJob::Save(job) => {
                     let result = engine::write(&job);
                     failed = result.is_err();
-                    FileDone::Saved { version: job.version, path: job.path, result }
+                    FileDone::Saved { version: job.version, path: job.path, result, bytes: job.bytes }
+                }
+                FileJob::Check { path } => {
+                    let raw = std::fs::read(&path).ok().and_then(|b| String::from_utf8(b).ok());
+                    FileDone::Disk { path, raw }
                 }
                 FileJob::Open { cfg, path, at } => {
                     // The failed save was told of already.
@@ -145,6 +165,8 @@ struct Doc {
     worker: structure::Worker,
     /// What changed since the file was read or saved, for the gutter.
     changes: changes::Worker,
+    /// What the file held when the person kept the window's text over it (not asked again).
+    declined: Option<String>,
     /// The selection's character count for the status bar, kept between frames.
     selected: count::Selected,
     saving: usize,
@@ -168,6 +190,7 @@ impl Doc {
             tree: None,
             worker: structure::Worker::new(move || wake()),
             changes: changes::Worker::new(move || for_changes()),
+            declined: None,
             selected: count::Selected::default(),
             saving: 0,
             finder: find::DocFinder::new(move || for_find()),
@@ -212,6 +235,12 @@ struct App {
     /// saved), and the tabs a save will close once it lands.
     closing: Option<PathBuf>,
     close_when_saved: Vec<PathBuf>,
+    /// The folders of the open files, watched for changes made by others
+    /// (src/external.rs); the files waiting to be read after their events
+    /// settle, and the ones whose question is up.
+    dirwatch: ito_common::dirwatch::DirWatcher,
+    watch_wait: Vec<(PathBuf, std::time::Instant)>,
+    asked: Vec<external::Asked>,
     /// The file thread's way in and out.
     files: Sender<FileJob>,
     done: Receiver<FileDone>,
@@ -389,6 +418,12 @@ impl App {
             tab_writer: ito_common::kept::Writer::new(tab_path.clone().unwrap_or_default(), live && tab_path.is_some()),
             closing: None,
             close_when_saved: Vec::new(),
+            dirwatch: {
+                let ctx = cc.egui_ctx.clone();
+                ito_common::dirwatch::DirWatcher::new(move || ctx.request_repaint())
+            },
+            watch_wait: Vec::new(),
+            asked: Vec::new(),
             files,
             done,
             started: std::time::Instant::now(),
@@ -454,6 +489,9 @@ impl App {
             tab_writer: ito_common::kept::Writer::new(PathBuf::new(), false),
             closing: None,
             close_when_saved: Vec::new(),
+            dirwatch: ito_common::dirwatch::DirWatcher::new(|| {}),
+            watch_wait: Vec::new(),
+            asked: Vec::new(),
             files,
             done,
             started: std::time::Instant::now(),
@@ -625,7 +663,7 @@ impl App {
     /// bare key for the keymap, unless a widget (a field of the settings) has
     /// the focus and reads it.
     fn read_keys(&mut self, ctx: &egui::Context) {
-        if self.palette.is_some() || self.quit.is_some() || self.closing.is_some() {
+        if self.palette.is_some() || self.quit.is_some() || self.closing.is_some() || self.external_open() {
             return;
         }
         let focused = ctx.memory(|m| m.focused().is_some());
@@ -849,7 +887,8 @@ impl App {
         let behind = ctx.input(|i| !i.focused || i.viewport().minimized == Some(true));
         while let Ok(d) = self.done.try_recv() {
             match d {
-                FileDone::Saved { version, path, result } => {
+                FileDone::Disk { path, raw } => self.disk_read(path, raw),
+                FileDone::Saved { version, path, result, bytes } => {
                     // The save belongs to the tab of that file, in front or not.
                     if let Some(d) = self.doc_mut(&path) {
                         d.saving = d.saving.saturating_sub(1);
@@ -859,6 +898,7 @@ impl App {
                     match result {
                         Ok(()) => {
                             if let Some(ed) = self.doc_mut(&path).and_then(|d| d.editor.as_mut()) {
+                                ed.set_disk(bytes);
                                 ed.saved(version);
                             }
                             // A close asked for with the save: only when nothing was typed meanwhile.
@@ -1473,6 +1513,7 @@ impl App {
         self.sync_common(&ctx);
         self.clicked();
         self.take_files(&ctx);
+        self.take_external(&ctx);
         self.take_door(&ctx);
         self.quit_after_save(&ctx);
         // The window's close (the bar's ×, Alt+F4) asks first, as Ctrl+Q does.
@@ -1488,6 +1529,7 @@ impl App {
         if self.closing.is_some() {
             self.closing_keys(&ctx);
         }
+        self.external_keys(&ctx);
         if self.editing() {
             // The document takes the keys without a widget's focus: one left
             // over (the settings, the palette) would type too, and Tab would
@@ -1565,6 +1607,7 @@ impl App {
         }
         self.quit_question(&ctx);
         self.closing_question(&ctx);
+        self.external_question(&ctx);
         // What the screen reader hears (and `--keys`' <Announced:> checks).
         for m in std::mem::take(&mut self.said) {
             ito_a11y::announce(ui, &m);
@@ -1889,6 +1932,55 @@ mod tests {
         let (left, right) = app.status_items(false);
         assert!(words(&left).contains(&"Read-only".to_owned()), "{left:?}");
         assert_eq!(words(&right), ["Not UTF-8", "LF"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 19.x: a file changed by someone else is followed when the window has no
+    /// unsaved changes, and asked about when it has.
+    #[test]
+    fn an_external_change_is_followed_when_clean_and_asked_about_when_dirty() {
+        let dir = std::env::temp_dir().join(format!("weft-external-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.md");
+        std::fs::write(&file, "one\ntwo\n").unwrap();
+        let mut app = App::for_tests();
+        app.open(&file);
+        // The same text: nothing.
+        app.disk_read(file.clone(), Some("one\ntwo\n".to_owned()));
+        assert!(app.asked.is_empty());
+        // Clean: followed, as one undo step.
+        app.disk_read(file.clone(), Some("one\nTWO\n".to_owned()));
+        assert!(app.asked.is_empty());
+        let ed = app.doc.editor.as_mut().unwrap();
+        assert_eq!(ed.text(), "one\nTWO\n");
+        assert!(!ed.is_dirty());
+        assert!(ed.undo());
+        // Dirty: asked, and a later change replaces the earlier question.
+        let ed = app.doc.editor.as_mut().unwrap();
+        ed.replace(&[(0..0, "mine ".to_owned())], ito_textbuf::Selection { anchor: 5, head: 5 });
+        app.disk_read(file.clone(), Some("one\nthree\n".to_owned()));
+        app.disk_read(file.clone(), Some("one\nfour\n".to_owned()));
+        assert_eq!(app.asked.len(), 1);
+        assert_eq!(app.asked[0].disk, "one\nfour\n");
+        assert_eq!(app.doc.editor.as_ref().unwrap().text(), "mine one\ntwo\n", "nothing taken yet");
+        // Keep: not asked again about the same contents.
+        app.answer_external(0);
+        app.disk_read(file.clone(), Some("one\nfour\n".to_owned()));
+        assert!(app.asked.is_empty());
+        // A different change asks again; taking it is one undo step and stays changed.
+        app.disk_read(file.clone(), Some("one\nfive\n".to_owned()));
+        assert_eq!(app.asked.len(), 1);
+        app.answer_external(1);
+        let ed = app.doc.editor.as_mut().unwrap();
+        assert_eq!(ed.text(), "one\nfive\n");
+        assert!(ed.is_dirty());
+        assert!(ed.undo());
+        assert_eq!(ed.text(), "mine one\ntwo\n");
+        // Typing what the file now holds is not a conflict.
+        let ed = app.doc.editor.as_mut().unwrap();
+        ed.reload("mine one\nsix\n", false);
+        app.disk_read(file.clone(), Some("mine one\nsix\n".to_owned()));
+        assert!(app.asked.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

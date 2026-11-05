@@ -79,6 +79,9 @@ pub struct Editor {
     /// which one it is (it changes with each read and save).
     base: Arc<String>,
     base_gen: u64,
+    /// What the file held when we last read or wrote it (BOM and all), to
+    /// tell a change made by someone else from our own save.
+    disk: Arc<String>,
 }
 
 /// The tab width a document starts with, until the settings say otherwise.
@@ -99,7 +102,57 @@ impl Editor {
             grown_at: None,
             base: Arc::new(text.to_owned()),
             base_gen: 0,
+            disk: Arc::new(text.to_owned()),
         }
+    }
+
+    /// What the file held when it was last read or written.
+    pub fn disk(&self) -> &str {
+        &self.disk
+    }
+
+    /// The file now holds `raw` (our own save landed).
+    pub fn set_disk(&mut self, raw: String) {
+        self.disk = Arc::new(raw);
+    }
+
+    /// Take `raw`, the file's new contents, as the document's text: as one
+    /// undo step, over only the part that differs, so the caret and the
+    /// scroll stay. With `clean` the document is then the file as it is (no
+    /// unsaved changes); otherwise it stays changed. `false` when nothing
+    /// was put in (locked, or the text is the same).
+    pub fn reload(&mut self, raw: &str, clean: bool) -> bool {
+        self.disk = Arc::new(raw.to_owned());
+        let new = raw.strip_prefix('\u{feff}').unwrap_or(raw);
+        let old = self.doc.text();
+        let lead = old.bytes().zip(new.bytes()).take_while(|(a, b)| a == b).count();
+        let start = (0..=lead).rev().find(|&i| old.is_char_boundary(i) && new.is_char_boundary(i)).unwrap_or(0);
+        let room = old.len().min(new.len()) - start;
+        let trail = old.bytes().rev().zip(new.bytes().rev()).take(room).take_while(|(a, b)| a == b).count();
+        let end = (0..=trail).rev().find(|&n| old.is_char_boundary(old.len() - n) && new.is_char_boundary(new.len() - n)).unwrap_or(0);
+        let (old_end, new_end) = (old.len() - end, new.len() - end);
+        if start == old_end && start == new_end {
+            if clean && self.doc.is_dirty() {
+                self.saved(self.doc.version());
+            }
+            return false;
+        }
+        let sel = self.doc.selection();
+        let map = |b: usize| {
+            if b <= start {
+                b
+            } else if b >= old_end {
+                b - old_end + new_end
+            } else {
+                start
+            }
+        };
+        let after = Selection { anchor: map(sel.anchor), head: map(sel.head) };
+        let put = self.replace(&[(start..old_end, new[start..new_end].to_owned())], after);
+        if put && clean {
+            self.saved(self.doc.version());
+        }
+        put
     }
 
     /// The text as read or last saved, and a number that changes with it.
@@ -670,6 +723,55 @@ mod tests {
         let mut e = Editor::new(text);
         e.set_caret(caret, false);
         e
+    }
+
+    #[test]
+    fn reload_keeps_the_caret_and_is_one_undo_step() {
+        let mut e = at("one\ntwo\nthree\n", 12);
+        assert!(e.reload("ONE\ntwo\nthree\n", true));
+        assert_eq!(e.text(), "ONE\ntwo\nthree\n");
+        assert_eq!(e.caret(), 12, "after the change: unmoved");
+        assert!(!e.is_dirty());
+        assert_eq!(e.disk(), "ONE\ntwo\nthree\n");
+        assert!(e.undo());
+        assert_eq!(e.text(), "one\ntwo\nthree\n");
+        assert!(!e.undo(), "one step only");
+    }
+
+    #[test]
+    fn reload_moves_a_caret_after_the_change_and_snaps_one_inside() {
+        let mut e = at("ab\ncd\n", 5);
+        assert!(e.reload("ab\nXXXXcd\n", true));
+        assert_eq!(e.caret(), 9);
+        let mut e = at("ab\ncd\nef\n", 4);
+        assert!(e.reload("ab\nZ\nef\n", true));
+        assert_eq!(e.caret(), 3, "inside the replaced part: its start");
+    }
+
+    #[test]
+    fn reload_same_text_changes_nothing_and_can_mark_clean() {
+        let mut e = at("x\n", 0);
+        e.replace(&[(0..0, "y".to_owned())], Selection { anchor: 1, head: 1 });
+        assert!(e.is_dirty());
+        assert!(!e.reload("yx\n", true), "nothing to put in");
+        assert!(!e.is_dirty(), "but the text is the file's now");
+    }
+
+    #[test]
+    fn reload_without_clean_stays_changed_and_keeps_crlf_and_multibyte() {
+        let mut e = at("あ\r\nい\r\n", 0);
+        assert!(e.reload("あ\r\nう\r\n", false));
+        assert_eq!(e.text(), "あ\r\nう\r\n");
+        assert!(e.is_dirty());
+        assert!(e.undo());
+        assert_eq!(e.text(), "あ\r\nい\r\n");
+    }
+
+    #[test]
+    fn reload_drops_a_bom_from_the_text() {
+        let mut e = at("a\n", 0);
+        assert!(e.reload("\u{feff}a\nb\n", true));
+        assert_eq!(e.text(), "a\nb\n");
     }
 
     #[test]

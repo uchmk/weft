@@ -25,7 +25,7 @@ ito-winres = { git = "https://github.com/uchmk/ito", rev = "e843abde85776519665b
 [dependencies]
 # Every ito crate at the same rev. scripts/ito-first.py says which crates an
 # app must have and which it must not replace; what ito lacks, ask ito for.
-ito-common = { git = "https://github.com/uchmk/ito", rev = "e843abde85776519665be80adfc82d2853436476", features = ["clock", "egui"] }
+ito-common = { git = "https://github.com/uchmk/ito", rev = "e843abde85776519665be80adfc82d2853436476", features = ["clock", "egui", "dirwatch"] }
 ito-i18n = { git = "https://github.com/uchmk/ito", rev = "e843abde85776519665be80adfc82d2853436476", features = ["edit"] }
 ito-theme = { git = "https://github.com/uchmk/ito", rev = "e843abde85776519665be80adfc82d2853436476" }
 ito-diff = { git = "https://github.com/uchmk/ito", rev = "e843abde85776519665be80adfc82d2853436476" }

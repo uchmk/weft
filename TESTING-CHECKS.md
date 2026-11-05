@@ -1,6 +1,6 @@
 # Checklist
 
-151 checks in TESTING.md, 84 left for a person.
+157 checks in TESTING.md, 90 left for a person.
 
 ## 1. Start
 
@@ -172,3 +172,12 @@
 - [ ] **19.1** Open a file, type a new line, change a line, delete a line, in the light and dark themes → A green bar by the added line, a blue bar by the changed one, a small red wedge where lines were taken out 〔未訳〕
 - [ ] **19.2** Save (Ctrl+S) → The marks go; they come back only for what you edit afterwards 〔未訳〕
 - [ ] **19.3** Undo back to the text as read → The marks go 〔未訳〕
+
+## 20. Changes made to the file by another program
+
+- [ ] **20.1** Open a file, change nothing, change the file from another program (another editor, `echo >> file`) → Within a moment the text follows the file and the status line says it was reloaded; the caret stays; Ctrl+Z brings back the earlier text 〔未訳〕
+- [ ] **20.2** Type something in weft, then change the file from another program → A box names the file, counts the lines (+ the file's, - the window's) and lists a few of them 〔未訳〕
+- [ ] **20.3** In the box press Esc → Your text stays and stays changed; the same file contents do not ask again; a different change asks again 〔未訳〕
+- [ ] **20.4** In the box press Enter → The file's text goes in as one undo step; Ctrl+Z brings your text back; the document still counts as changed 〔未訳〕
+- [ ] **20.5** Save with Ctrl+S → No box (the save is not taken as someone else's change) 〔未訳〕
+- [ ] **20.6** Change the file twice while the box is open → The box shows the latest contents 〔未訳〕

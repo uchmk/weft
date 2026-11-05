@@ -186,6 +186,16 @@ editor_failed = "Could not open the external editor: {0}"
 open_failed = "Could not open {0}: {1}"
 no_thread = "weft could not start its file thread: nothing can be saved"
 
+# A file changed by someone else while it is open.
+[external]
+title = "File changed on disk"
+body = "{0} was changed by another program."
+# {0} lines the file has that the window lacks, {1} lines the window has that the file lacks.
+counts = "+{0} / -{1} lines (+ the file's, - the window's)"
+keep = "Keep my text"
+load = "Load the file (Ctrl+Z undoes)"
+reloaded = "{0} was changed by another program: reloaded"
+
 # Quitting with changes that are not saved.
 [quit]
 title = "Unsaved changes"
