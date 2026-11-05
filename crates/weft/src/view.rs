@@ -506,7 +506,7 @@ impl View {
         self.page = ((view_h / row_h).floor() as usize).saturating_sub(1).max(1);
 
         if let Some(t) = map {
-            let look = ito_minimap::Look { row_h, font: font.clone() };
+            let look = ito_minimap::Look { row_h, font: font.clone(), style: ito_minimap::Style::Runs };
             let line = |i: usize| -> Vec<(String, Option<[u8; 3]>)> {
                 let Some(r) = ed.line_range(i) else { return Vec::new() };
                 let body = text[r.clone()].trim_end_matches(['\r', '\n']);
