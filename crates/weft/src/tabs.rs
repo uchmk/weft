@@ -216,7 +216,7 @@ impl App {
 
     /// Bring the tab `path` forward when it is open.
     pub(crate) fn show_tab(&mut self, path: &Path) {
-        let id = path.to_path_buf();
+        let id = tab_id(path);
         if self.tabs.position(&id).is_some() {
             self.tabs.open(id);
             self.reconcile();

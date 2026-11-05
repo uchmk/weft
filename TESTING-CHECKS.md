@@ -1,6 +1,6 @@
 # Checklist
 
-208 checks in TESTING.md, 139 left for a person.
+210 checks in TESTING.md, 141 left for a person.
 
 ## 1. Start
 
@@ -120,6 +120,7 @@
 
 - [ ] **13.4** Run `weft a.md` while a.md is already open → The tab for a.md comes forward; no duplicate tab 〔未訳〕
 - [ ] **13.5** Quit weft and run it again → The first weft owns the door again; a stale door file does not stop it 〔未訳〕
+- [ ] **13.7** `weft m1.md m2.md m3.md --keys "<Wait:300><Shot:a><C-Tab><Wait:300><Shot:b><C-S-Tab><C-S-Tab><Wait:300><Shot:c><Quit>"` (relative paths) → a: m1 in front; b: m2; c: m3 (the previous tab wraps round) 〔未訳〕
 
 ## 14. Find and replace
 
@@ -263,3 +264,7 @@
 - [ ] **31.3** Copy a few cells in a spreadsheet, then `Ctrl+V` → A GFM table with the header row on top 〔未訳〕
 - [ ] **31.4** Copy plain text from weft or Notepad, then `Ctrl+V` → The text as it is (line breaks and spacing kept) 〔未訳〕
 - [ ] **31.5** Copy a very large web page, then `Ctrl+V` and keep typing → The typing is not held up; the paste lands a moment later 〔未訳〕
+
+## 32. Tabs with --keys
+
+- [ ] **32.1** Run 13.7 with `UCHMK_CONFIG_DIR` set to a folder whose `common.toml` says `theme = "light"` → The same three shots in the light theme; the tab bar and the front tab read clearly 〔未訳〕
