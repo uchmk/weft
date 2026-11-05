@@ -33,12 +33,38 @@ pub struct Folds {
     hidden: Vec<Hidden>,
     /// The version of the text `hidden` was worked out for.
     stamp: Option<u64>,
+    /// Focus view: only the section the caret is in shows.
+    focus: bool,
+    /// The lines outside that section, and what they were worked out for (version, section).
+    outside: Vec<Hidden>,
+    focus_stamp: Option<(u64, Option<usize>)>,
 }
 
 impl Folds {
-    /// The hidden lines, in order (what the view lays out around).
+    /// The folded lines, in order.
+    #[cfg(test)]
     pub fn hidden(&self) -> &[Hidden] {
         &self.hidden
+    }
+
+    /// Everything the view leaves out: the folds and, in focus view, what is outside the section.
+    pub fn view_hidden(&self) -> Vec<Hidden> {
+        let mut v = self.hidden.clone();
+        v.extend(self.outside.iter().cloned());
+        v
+    }
+
+    pub fn focused(&self) -> bool {
+        self.focus
+    }
+
+    /// Turn the focus view on or off.
+    pub fn set_focus(&mut self, on: bool) {
+        self.focus = on;
+        self.focus_stamp = None;
+        if !on {
+            self.outside.clear();
+        }
     }
 
     /// The fold whose hidden lines include `line`.
@@ -90,9 +116,39 @@ impl Folds {
         any
     }
 
+    /// In focus view, the lines outside the section holding the caret (before the first heading, the preamble is the section).
+    fn refresh_focus(&mut self, tree: &Tree, ed: &Editor) {
+        if !self.focus {
+            return;
+        }
+        let at = ito_outline::at_byte(&tree.headings, ed.caret());
+        if self.focus_stamp == Some((tree.version, at)) {
+            return;
+        }
+        self.focus_stamp = Some((tree.version, at));
+        let count = ed.line_count();
+        let text_len = ed.text().len();
+        let (from, to) = match at {
+            Some(i) => {
+                let h = &tree.headings[i];
+                (h.line, if h.section.end >= text_len { count } else { ed.line_of(h.section.end) })
+            }
+            None => (0, tree.headings.first().map_or(count, |h| h.line)),
+        };
+        let mut out = Vec::new();
+        if from > 0 {
+            out.push(Hidden { index: usize::MAX, heading: usize::MAX, lines: 0..from });
+        }
+        if to < count {
+            out.push(Hidden { index: usize::MAX, heading: usize::MAX, lines: to..count });
+        }
+        self.outside = out;
+    }
+
     /// Work `hidden` out again if `tree` is a reading of the text as it is.
     pub fn refresh(&mut self, tree: Option<&Tree>, ed: &Editor) {
         let Some(tree) = tree.filter(|t| t.version == ed.version()) else { return };
+        self.refresh_focus(tree, ed);
         if self.stamp == Some(tree.version) {
             return;
         }
@@ -202,6 +258,19 @@ d
         f.refresh(Some(&tree), &ed);
         assert_eq!(f.hidden()[0].index, 2);
         assert_eq!(f.hidden()[0].heading, 6);
+    }
+
+    #[test]
+    fn focus_leaves_only_the_section_with_the_caret() {
+        let (mut f, tree, mut ed) = folds(DOC, &[]);
+        f.set_focus(true);
+        ed.set_caret(ed.text().find("body").unwrap(), false);
+        f.refresh(Some(&tree), &ed);
+        // "## B" is line 4 and runs to "## C" at line 8.
+        let lines: Vec<_> = f.view_hidden().iter().map(|h| h.lines.clone()).collect();
+        assert_eq!(lines, [0..4, 8..ed.line_count()]);
+        f.set_focus(false);
+        assert!(f.view_hidden().is_empty());
     }
 
     #[test]

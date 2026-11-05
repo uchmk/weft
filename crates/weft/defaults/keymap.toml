@@ -176,6 +176,11 @@ run = "heading.fold"
 desc = "Fold or unfold this section"
 
 [[app.keymap]]
+on = "<A-S-f>"
+run = "view.focus"
+desc = "Show only this section"
+
+[[app.keymap]]
 on = "<F8>"
 run = "lint.next"
 desc = "Next lint finding"

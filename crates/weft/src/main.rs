@@ -832,6 +832,7 @@ impl App {
                 }
             }
             "heading.fold" | "heading.fold_all" | "heading.unfold_all" => self.fold_command(name),
+            "view.focus" => self.focus_toggle(),
             "lint.next" | "lint.prev" | "lint.fix_all" => self.lint_command(name),
             ito_find::cmd::OPEN
             | ito_find::cmd::REPLACE_OPEN
@@ -1096,6 +1097,16 @@ impl App {
             _ => doc.view.folds.set_all(tree, false),
         }
         doc.view.follow = true;
+    }
+
+    /// `view.focus`: show only the section the caret is in (it follows the caret), or all again.
+    fn focus_toggle(&mut self) {
+        if !self.editing() {
+            return;
+        }
+        let view = &mut self.doc.view;
+        view.folds.set_focus(!view.folds.focused());
+        view.follow = true;
     }
 
     /// `lint.next` and `lint.prev` (the caret goes to the finding, whose kind

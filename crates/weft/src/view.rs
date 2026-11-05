@@ -315,7 +315,7 @@ impl View {
         // A caret in folded lines opens the fold; else the folds follow the newest reading.
         self.folds.reveal(caret_line);
         self.folds.refresh(tree, ed);
-        let hidden = self.folds.hidden().to_vec();
+        let hidden = self.folds.view_hidden();
         let lay = Lay { ui, ed, tree, colors: &c, plain: &plain, wrap: wrap.then_some(view_w), row_h, hidden: &hidden };
         let h = |n: usize| lay.height(n);
 

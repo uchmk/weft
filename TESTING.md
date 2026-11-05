@@ -323,3 +323,13 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 25.4 | Run "Fix all lint findings" from the palette, then Ctrl+Z once | The fixable ones are mended together; one undo restores the text |
 | 25.5 | Look at it in the light and the dark theme | The underlines read in both |
 | 25.6 | In a saved note, write `[a](gone.md)` with no such file next to it, and a link to a file that exists | Only the missing one is underlined; F8 names it "リンク先がありません" |
+
+## 26. Focus view
+
+| # | Do | Expect |
+|---|---|---|
+| 26.1 | In a note with several `##` sections, put the caret in one and press Alt+Shift+F | Only that section (heading to the next heading of the same or higher level) shows |
+| 26.2 | Move the caret down into the next section | The view follows: the next section shows, the old one is hidden |
+| 26.3 | Press Alt+Shift+F again | All lines show again |
+| 26.4 | Put the caret before the first heading and turn it on | Only the preamble shows |
+| 26.5 | Look at it in the light and the dark theme | Same layout, line numbers keep their real values |

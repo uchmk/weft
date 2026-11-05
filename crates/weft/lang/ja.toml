@@ -59,6 +59,7 @@ fixed = "{} は weft が先に読むので、ここに割り当てても動き�
 "Fold or unfold this section" = "この節を折りたたむ・開く"
 "Fold all sections" = "すべての節を折りたたむ"
 "Unfold all sections" = "すべての節を開く"
+"Show only this section" = "この節だけを表示する"
 "Next lint finding" = "次の指摘へ"
 "Previous lint finding" = "前の指摘へ"
 "Fix all lint findings" = "指摘をすべて直す"
