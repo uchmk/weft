@@ -18,6 +18,7 @@ mod count;
 mod door;
 mod engine;
 mod envreport;
+mod find;
 mod help;
 mod i18n;
 mod icon;
@@ -142,19 +143,24 @@ struct Doc {
     /// The selection's character count for the status bar, kept between frames.
     selected: count::Selected,
     saving: usize,
+    /// The find bar's search of this text: its thread and newest matches.
+    finder: find::DocFinder,
 }
 
 impl Doc {
-    /// A document with nothing open; `wake` is asked for a repaint when the
-    /// worker has a reading.
-    fn new(wake: impl Fn() + Send + 'static) -> Self {
+    /// A document with nothing open; `wake` is asked for a repaint when a
+    /// worker has a result.
+    fn new(wake: impl Fn() + Send + Sync + 'static) -> Self {
+        let wake = std::sync::Arc::new(wake);
+        let for_find = wake.clone();
         Self {
             editor: None,
             view: view::View::default(),
             tree: None,
-            worker: structure::Worker::new(wake),
+            worker: structure::Worker::new(move || wake()),
             selected: count::Selected::default(),
             saving: 0,
+            finder: find::DocFinder::new(move || for_find()),
         }
     }
 }
@@ -173,6 +179,10 @@ struct App {
     note: Option<String>,
     /// The document in front (`weft FILE`) and what goes with it.
     doc: Doc,
+    /// The find and replace bar (src/find.rs), shared by the tabs, and whether
+    /// a widget of it has the focus (then the document does not type).
+    find: ito_find::FindBar,
+    find_focus: bool,
     /// The window, for the workers of the documents opened later.
     ctx: egui::Context,
     /// The open files as tabs (src/tabs.rs); `doc` is the front one's
@@ -347,6 +357,8 @@ impl App {
             lang,
             note: None,
             doc: Doc::new(move || wake.request_repaint()),
+            find: ito_find::FindBar::default(),
+            find_focus: false,
             ctx,
             tabs: ito_tabs::Tabs::new(tab_settings.limit),
             parked: Vec::new(),
@@ -406,6 +418,8 @@ impl App {
             lang: "en".to_owned(),
             note: None,
             doc: Doc::new(|| {}),
+            find: ito_find::FindBar::default(),
+            find_focus: false,
             ctx: egui::Context::default(),
             tabs: ito_tabs::Tabs::new(ito_tabs::DEFAULT_LIMIT),
             parked: Vec::new(),
@@ -438,6 +452,12 @@ impl App {
     /// settings, the help, the palette, the list under the bell, the
     /// question before quitting).
     fn editing(&self) -> bool {
+        self.uncovered() && !self.find_focus
+    }
+
+    /// As `editing`, but also while the find bar has the focus: nothing covers
+    /// the document, so the commands that need only that (tabs, find) run.
+    fn uncovered(&self) -> bool {
         self.doc.editor.is_some()
             && !self.settings_open
             && !self.help.open
@@ -697,8 +717,13 @@ impl App {
             "file.save" => self.save(),
             "file.open_in_editor" => self.open_in_editor(),
             _ if ito_tabs::command(name).is_some() => {
-                if let (true, Some(op)) = (self.editing(), ito_tabs::command(name)) {
+                if let (true, Some(op)) = (self.uncovered(), ito_tabs::command(name)) {
                     self.tab_op(op);
+                }
+            }
+            ito_find::cmd::OPEN | ito_find::cmd::REPLACE_OPEN | ito_find::cmd::NEXT | ito_find::cmd::PREV | ito_find::cmd::REPLACE_ALL => {
+                if self.uncovered() {
+                    self.find_command(ctx, name);
                 }
             }
             _ if self.editing() => {
@@ -874,6 +899,7 @@ impl App {
         out.push_str(&format!("quit: {quit}\n"));
         out.push_str(&self.tabs_report());
         out.push_str(&format!("closing: {}\n", self.closing.is_some()));
+        out.push_str(&self.find_report());
         if let Some(ed) = &self.doc.editor {
             let (line, col) = ed.line_col();
             let file = ed.path().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -1455,6 +1481,7 @@ impl App {
             .frame(egui::Frame::NONE.fill(ito_theme::colors().bg))
             .show(ui, |ui| self.title_bar(ui));
         self.tab_bar(ui);
+        self.find_bar(ui);
         egui::Panel::bottom("statusbar").exact_size(ito_statusbar::HEIGHT).frame(egui::Frame::NONE).show(ui, |ui| self.status_bar(ui));
         self.take_notices();
         self.notice_list(&ctx);
@@ -1476,11 +1503,14 @@ impl App {
             self.read_keys(&ctx);
             // A key may have opened the help or the settings.
             let editing = self.editing();
+            self.find_sync();
             if let Some(ed) = &mut self.doc.editor {
                 if !editing {
                     ed.seal();
                 }
-                self.doc.view.show(ui, ed, self.doc.tree.as_ref(), editing);
+                let finds: &[std::ops::Range<usize>] =
+                    if self.find.open { self.doc.finder.marks(&find::key(&self.find, ed, &self.doc.finder)) } else { &[] };
+                self.doc.view.show(ui, ed, self.doc.tree.as_ref(), finds, editing);
             } else {
                 // No file: the ghost stands where the document would be.
                 let look = ito_prefs::Look { c: ito_theme::colors(), q: "" };

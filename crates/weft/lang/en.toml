@@ -53,6 +53,11 @@ fixed = "weft reads {} itself: bound here, it never runs."
 "Go to tab 7" = "Go to tab 7"
 "Go to tab 8" = "Go to tab 8"
 "Go to tab 9" = "Go to tab 9"
+"Find" = "Find"
+"Find and replace" = "Find and replace"
+"Next match" = "Next match"
+"Previous match" = "Previous match"
+"Replace all" = "Replace all"
 "Move left" = "Move left"
 "Move right" = "Move right"
 "Move up a line" = "Move up a line"
@@ -200,6 +205,26 @@ discard = "Close without saving"
 full = "Could not open {0}: the tabs are full and {1} has changes that are not saved"
 # The tab of a document that has no file.
 untitled = "Untitled"
+
+# The find and replace bar (ito-find's words), and what it says when it acts.
+[find]
+find_hint = "Find"
+replace_hint = "Replace with"
+regex = "Regular expression"
+match_case = "Match case"
+whole_word = "Whole word"
+in_selection = "In selection"
+next = "Next match"
+prev = "Previous match"
+replace = "Replace"
+replace_all = "Replace all"
+close = "Close"
+toggle_replace = "Show or hide Replace"
+no_results = "No results"
+searching = "Searching…"
+# {0} the number of places replaced.
+replaced = "Replaced {0}"
+locked = "This file cannot be changed"
 
 # Said to a screen reader when a command does not apply at the caret.
 [edit]

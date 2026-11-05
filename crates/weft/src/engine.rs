@@ -442,6 +442,22 @@ impl Editor {
         self.doc.apply(Transaction::from_change(&change, before)).is_ok()
     }
 
+    /// Replace each of `edits` (byte ranges of the text as it is, ascending and
+    /// not overlapping) with its text, as one undo step; the selection after is
+    /// `after`, in the coordinates of the new text. `false` when the document is
+    /// locked, `edits` is empty, or a range does not fit.
+    pub fn replace(&mut self, edits: &[(std::ops::Range<usize>, String)], after: Selection) -> bool {
+        if !self.writable() || edits.is_empty() {
+            return false;
+        }
+        let before = self.doc.selection();
+        // A Transaction applies its edits in order, each in the coordinates the
+        // one before left; from the end backwards, the ranges given stay true.
+        let list: Vec<Edit> = edits.iter().rev().map(|(r, t)| Edit { range: r.clone(), text: t.clone() }).collect();
+        self.goal = None;
+        self.doc.apply(Transaction::new(list, before, after)).is_ok()
+    }
+
     /// The spaces Tab puts in outside a table and a list item, and the most
     /// Shift+Tab takes off a line. (Only the tests ask: Tab reads `self.tab`.)
     #[cfg(test)]

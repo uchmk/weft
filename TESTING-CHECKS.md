@@ -1,6 +1,6 @@
 # Checklist
 
-106 checks in TESTING.md, 55 left for a person.
+125 checks in TESTING.md, 64 left for a person.
 
 ## 1. Start
 
@@ -109,3 +109,24 @@
 自動テスト済みなので下には出していない: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7, 11.8, 11.9, 11.10, 11.12
 
 - [ ] **11.11** On a JIS and on a US keyboard, with the IME off and then on, do 11.2 with `Alt+W` and `Alt+Shift+W`, and 11.5's headings with `Alt+N`, `Alt+P` and `Alt+U`; open the key help (`F1`) and the palette → Each does what its command does in 11.2 and 11.5 and types no letter, with the IME on too; the window's menu does not open; the key help and the palette list each key by its command 〔未訳〕
+
+## 12. Tabs
+
+- [ ] **12.1** Start `weft a.md`, then run `weft b.md` again from another terminal → The running window comes forward with b.md as a second tab; no second window opens 〔未訳〕
+- [ ] **12.2** Press `Ctrl+Tab`, `Ctrl+Shift+Tab`, `Alt+2`, and `Ctrl+W` on a tab with unsaved changes → The tab changes each time; `Ctrl+W` asks to save, discard or cancel before closing 〔未訳〕
+
+## 13. A second launch — 全 3 件が自動
+
+`cargo test` が全部見ているので、押すものはありません。
+
+## 14. Find and replace
+
+自動テスト済みなので下には出していない: 14.1, 14.2, 14.3, 14.4, 14.5, 14.6, 14.7
+
+- [ ] **14.8** Press `Ctrl+F`, type a word → Every match is tinted in the text and the one at the caret is tinted stronger; the bar shows "i / n", or "No results" 〔未訳〕
+- [ ] **14.9** Press `Ctrl+F` with a word selected; press `Esc` → The word is in the field; `Esc` closes the bar and the highlights go 〔未訳〕
+- [ ] **14.10** With the bar focused type text; click into the document and type → While the bar has the focus nothing goes into the document; after the click it does 〔未訳〕
+- [ ] **14.11** Turn on the Japanese IME and type `かな` into the field, press `Enter` while converting, then `Enter` again → The first `Enter` only confirms the conversion; the second steps to the next match 〔未訳〕
+- [ ] **14.12** Open two files as tabs, search in one, switch to the other and back → Each tab shows its own count and highlights; the bar's query stays 〔未訳〕
+- [ ] **14.13** Replace all in a CRLF file with a BOM, save, and look at the file → The line endings and the BOM are as they were 〔未訳〕
+- [ ] **14.14** Look at the bar in the light and the dark theme, in a narrow window and with a long query → The bar uses the theme's colours, nothing overlaps, the buttons are the shared ones with the focus ring 〔未訳〕

@@ -125,6 +125,36 @@ on = "<A-9>"
 run = "tab.goto_9"
 desc = "Go to tab 9"
 
+# --- Find and replace ---
+#
+# Enter in the bar steps to the next match (Shift+Enter the previous); Enter in
+# the Replace field replaces; Esc closes the bar.
+
+[[app.keymap]]
+on = "<C-f>"
+run = "find.open"
+desc = "Find"
+
+[[app.keymap]]
+on = "<C-h>"
+run = "replace.open"
+desc = "Find and replace"
+
+[[app.keymap]]
+on = "<F3>"
+run = "find.next"
+desc = "Next match"
+
+[[app.keymap]]
+on = "<S-F3>"
+run = "find.prev"
+desc = "Previous match"
+
+[[app.keymap]]
+on = "<C-A-Enter>"
+run = "replace.all"
+desc = "Replace all"
+
 # --- The caret ---
 
 [[edit.keymap]]

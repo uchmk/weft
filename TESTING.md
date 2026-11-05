@@ -175,3 +175,40 @@ name from the palette (`Ctrl+Shift+P`), or bind one on the Keys page of the sett
 | 11.10 | Press `Alt+W`, then `Alt+Shift+W` after two `Alt+W`s, `Alt+N`, `Alt+P` and `Alt+U` as egui sends them from Windows (the key, then its letter), with the caret in a section's body | Each selects or moves as the palette runs its command by name, and the text does not change (no letter typed); the palette and the key help show `Alt+W`, `Alt+Shift+W`, `Alt+N`, `Alt+P`, `Alt+U` by their commands; none is `F12`, the palette's, the scale's or the clipboard's key, and none is bound twice |
 | 11.11 | On a JIS and on a US keyboard, with the IME off and then on, do 11.2 with `Alt+W` and `Alt+Shift+W`, and 11.5's headings with `Alt+N`, `Alt+P` and `Alt+U`; open the key help (`F1`) and the palette | Each does what its command does in 11.2 and 11.5 and types no letter, with the IME on too; the window's menu does not open; the key help and the palette list each key by its command |
 | 11.12 | In `# P`, `body`, `> ## Q`, `q` (blank lines between), put the caret at the start of the `> ## Q` line and run "Delete the heading line, keeping its body"; press `Ctrl+Z`; the same with `- ## L` and ` ## C` (one space) for the line | The line goes with its `> ` (`- `, ` `) and the blank line after it: `# P`, `body`, `q` are left, `# P` untouched; one `Ctrl+Z` brings it back |
+
+## 12. Tabs
+
+| # | Do | Expect |
+|---|---|---|
+| 12.1 | Start `weft a.md`, then run `weft b.md` again from another terminal | The running window comes forward with b.md as a second tab; no second window opens |
+| 12.2 | Press `Ctrl+Tab`, `Ctrl+Shift+Tab`, `Alt+2`, and `Ctrl+W` on a tab with unsaved changes | The tab changes each time; `Ctrl+W` asks to save, discard or cancel before closing |
+
+## 13. A second launch
+
+| # | Do | Expect |
+|---|---|---|
+| 13.1 | Run `weft sub\c.md` from a folder while weft is already running | c.md opens as a tab by its full path, not the path relative to the running window's folder |
+| 13.2 | Run `weft a.md` while a.md is already open | The tab for a.md comes forward; no duplicate tab |
+| 13.3 | Quit weft and run it again | The first weft owns the door again; a stale door file does not stop it |
+
+## 14. Find and replace
+
+The keys: Find `Ctrl+F`, Find and replace `Ctrl+H`, Next match `F3`, Previous match `Shift+F3`, Replace all `Ctrl+Alt+Enter`.
+In the bar `Enter` goes to the next match, `Shift+Enter` to the previous, `Enter` in the Replace field replaces, `Esc` closes the bar.
+
+| # | Do | Expect |
+|---|---|---|
+| 14.1 | In a document where a word occurs several times, press `Ctrl+H`, type the word and a replacement, press `Ctrl+Alt+Enter`, then `Ctrl+Z` once | Every place is replaced and the status bar says how many; one `Ctrl+Z` brings all of them back |
+| 14.2 | Select two lines, turn on "In selection", search for a word that is also outside them, and replace all | Only the selected lines change |
+| 14.3 | Open a Shift_JIS file, press `Ctrl+H` and replace all | Nothing changes; the bar says the file cannot be changed |
+| 14.4 | Press `F3` past the last match, `Shift+F3` before the first | The step wraps round to the other end |
+| 14.5 | With a match selected, press `Enter` in the Replace field repeatedly | Each press replaces that match and moves to the next one |
+| 14.6 | Type a long query one letter at a time in a large file | Typing never waits; the count and the highlights follow the newest query |
+| 14.7 | Turn on "Regular expression" and type `(` | The bar says why it is not a pattern; replace does nothing |
+| 14.8 | Press `Ctrl+F`, type a word | Every match is tinted in the text and the one at the caret is tinted stronger; the bar shows "i / n", or "No results" |
+| 14.9 | Press `Ctrl+F` with a word selected; press `Esc` | The word is in the field; `Esc` closes the bar and the highlights go |
+| 14.10 | With the bar focused type text; click into the document and type | While the bar has the focus nothing goes into the document; after the click it does |
+| 14.11 | Turn on the Japanese IME and type `かな` into the field, press `Enter` while converting, then `Enter` again | The first `Enter` only confirms the conversion; the second steps to the next match |
+| 14.12 | Open two files as tabs, search in one, switch to the other and back | Each tab shows its own count and highlights; the bar's query stays |
+| 14.13 | Replace all in a CRLF file with a BOM, save, and look at the file | The line endings and the BOM are as they were |
+| 14.14 | Look at the bar in the light and the dark theme, in a narrow window and with a long query | The bar uses the theme's colours, nothing overlaps, the buttons are the shared ones with the focus ring |

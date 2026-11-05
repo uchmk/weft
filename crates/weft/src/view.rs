@@ -129,7 +129,7 @@ impl View {
     /// and the input method's commits come in with the keys, in their order,
     /// before this; here the composition is drawn and the candidate window
     /// placed.
-    pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, keys: bool) {
+    pub fn show(&mut self, ui: &mut Ui, ed: &mut Editor, tree: Option<&Tree>, finds: &[std::ops::Range<usize>], keys: bool) {
         let rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(rect, Sense::click_and_drag());
         let c = ito_theme::colors();
@@ -270,6 +270,19 @@ impl View {
             if let Some(r) = &marks.brk {
                 let (x0, x1) = (gx(r.start, false), gx(r.end, true));
                 painter.rect_filled(Rect::from_min_max(pos2(x0, y), pos2(x1, y + row_h)), 2.0, look.fill);
+            }
+            // The matches of the search, under the selection; the one the
+            // selection is on is stronger.
+            for f in &finds[finds.partition_point(|f| f.end <= l.start)..] {
+                if f.start > l.end {
+                    break;
+                }
+                let (s, e) = (f.start.clamp(l.start, l.end), f.end.clamp(l.start, l.end));
+                let (x0, x1) = (origin_x + l.x(text, s, false), origin_x + l.x(text, e, false));
+                if x1 > x0 {
+                    let fill = if *f == sel { c.match_current_bg() } else { c.match_bg() };
+                    painter.rect_filled(Rect::from_min_max(pos2(x0, y), pos2(x1, y + row_h)), 2.0, fill);
+                }
             }
             if !sel.is_empty() && sel.start <= l.end && sel.end > l.start {
                 let s = sel.start.clamp(l.start, l.end);
@@ -437,7 +450,7 @@ mod tests {
         let mut ed = Editor::new(&"line\n".repeat(6000));
         ed.go_to(5000, 1);
         let mut view = View::default();
-        let mut frame = |view: &mut View| ctx.run_ui(input(), |ui| view.show(ui, &mut ed, None, false)).drop_without_applying_deltas();
+        let mut frame = |view: &mut View| ctx.run_ui(input(), |ui| view.show(ui, &mut ed, None, &[], false)).drop_without_applying_deltas();
         frame(&mut view);
         assert!(shown(&view), "line 5000 at {} with the view at {}", 4999.0 * view.row_h, view.scroll.y);
         // Another face: egui's own proportional one, a little lower than its monospace.
