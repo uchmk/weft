@@ -34,6 +34,7 @@ mod notify;
 mod prefs;
 mod preview;
 mod recovery;
+mod richpaste;
 mod settings;
 mod structure;
 mod tabs;
@@ -108,6 +109,11 @@ enum FileJob {
         path: PathBuf,
         stamp: String,
     },
+    /// The clipboard's HTML or spreadsheet text as Markdown (src/richpaste.rs).
+    PasteRich {
+        path: PathBuf,
+        text: String,
+    },
 }
 
 /// What came back from the file thread.
@@ -125,6 +131,12 @@ enum FileDone {
         raw: Option<String>,
     },
     OpenFailed(String),
+    /// The text pasted, and what it becomes: `None` pastes the text itself.
+    Rich {
+        path: PathBuf,
+        text: String,
+        md: Option<String>,
+    },
     /// The picture stored: the link's path, `None` when the clipboard had none.
     Image {
         path: PathBuf,
@@ -149,6 +161,10 @@ fn file_thread(ctx: egui::Context) -> (Sender<FileJob>, Receiver<FileDone>) {
                 FileJob::Check { path } => {
                     let raw = std::fs::read(&path).ok().and_then(|b| String::from_utf8(b).ok());
                     FileDone::Disk { path, raw }
+                }
+                FileJob::PasteRich { path, text } => {
+                    let md = richpaste::job(&text);
+                    FileDone::Rich { path, text, md }
                 }
                 FileJob::PasteImage { path, stamp } => {
                     let result = image::paste_job(&path, &stamp);
@@ -807,6 +823,13 @@ impl App {
         if !self.editing() {
             return;
         }
+        if let egui::Event::Paste(t) = e {
+            // The clipboard's HTML is read on the file thread, so the paste
+            // lands a moment later; with no file to send it for, it is the text.
+            if self.doc.editor.is_some() && self.paste_rich(t) {
+                return;
+            }
+        }
         let now = self.now_ms();
         let Some(ed) = &mut self.doc.editor else { return };
         let changed = match e {
@@ -958,6 +981,7 @@ impl App {
             match d {
                 FileDone::Disk { path, raw } => self.disk_read(path, raw),
                 FileDone::Image { path, result } => self.image_done(path, result),
+                FileDone::Rich { path, text, md } => self.rich_done(path, text, md),
                 FileDone::Saved { version, path, result, bytes } => {
                     // The save belongs to the tab of that file, in front or not.
                     if let Some(d) = self.doc_mut(&path) {

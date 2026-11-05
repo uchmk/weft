@@ -372,3 +372,13 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 30.3 | Click the ▾ / ▸ | The section folds / unfolds; the caret does not move into the text |
 | 30.4 | Put the caret in a body, then click the heading's ▾ | The section folds and the caret is on the heading |
 | 30.5 | Click a line number or the text next to a heading | The caret is placed as usual; nothing folds |
+
+## 31. Smart paste
+
+| # | Do | See |
+|---|---|---|
+| 31.1 | Copy a heading, a bold word and a link on a web page, then `Ctrl+V` | They arrive as `#`, `**…**` and `[text](url)`; one `Ctrl+Z` takes it all back |
+| 31.2 | Copy a table on a web page, then `Ctrl+V` | A GFM table |
+| 31.3 | Copy a few cells in a spreadsheet, then `Ctrl+V` | A GFM table with the header row on top |
+| 31.4 | Copy plain text from weft or Notepad, then `Ctrl+V` | The text as it is (line breaks and spacing kept) |
+| 31.5 | Copy a very large web page, then `Ctrl+V` and keep typing | The typing is not held up; the paste lands a moment later |
