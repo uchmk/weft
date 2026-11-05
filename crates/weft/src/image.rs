@@ -9,6 +9,8 @@ use crate::App;
 
 /// Lossy WebP quality (docs/design.md: around 80).
 const QUALITY: f32 = 80.0;
+/// Pictures wider than this are shrunk before they are stored (docs/design.md).
+const MAX_WIDTH: u32 = 2000;
 /// The folder next to the note.
 const DIR: &str = "assets";
 
@@ -16,7 +18,7 @@ const DIR: &str = "assets";
 /// (never over a file). The same picture twice reuses the file it made the
 /// first time. Returns the path to write in the link, with `/`.
 pub(crate) fn store(note: &Path, stamp: &str, img: &ito_image::Rgba) -> Result<String, String> {
-    let bytes = ito_image::encode_webp(img, QUALITY).map_err(|e| e.to_string())?;
+    let bytes = ito_image::encode_webp(&img.fit_width(MAX_WIDTH), QUALITY).map_err(|e| e.to_string())?;
     let dir = note.parent().unwrap_or(Path::new(".")).join(DIR);
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     // Same bytes as a file already there: use that one.
@@ -119,6 +121,20 @@ mod tests {
         assert_eq!(store(&note, "20261105-1001", &pic(10)).unwrap(), a);
         // Another picture in the same minute: the next number.
         assert_eq!(store(&note, "20261105-1000", &pic(200)).unwrap(), "assets/20261105-1000-2.webp");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_wide_picture_is_stored_at_the_limit() {
+        let dir = std::env::temp_dir().join(format!("weft-image-wide-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let wide = ito_image::Rgba::new(3000, 10, vec![120; 3000 * 10 * 4]).unwrap();
+        let rel = store(&dir.join("n.md"), "20261105-1000", &wide).unwrap();
+        let bytes = std::fs::read(dir.join(rel)).unwrap();
+        // The WebP header holds the size; decoding is ito-image's job, so compare against the shrunk copy.
+        let want = ito_image::encode_webp(&wide.fit_width(MAX_WIDTH), QUALITY).unwrap();
+        assert_eq!(bytes, want);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
