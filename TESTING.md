@@ -217,3 +217,19 @@ In the bar `Enter` goes to the next match, `Shift+Enter` to the previous, `Enter
 | 14.15 | In a document where a word occurs several times, press `Ctrl+H`, type the word and a replacement, press `Ctrl+Alt+Enter`, then `Ctrl+Z` once | Every place is replaced and the status bar says how many; one `Ctrl+Z` brings all of them back |
 | 14.16 | With a match selected, press `Enter` in the Replace field repeatedly | Each press replaces that match and moves to the next one |
 | 14.17 | Type a long query one letter at a time in a large file | Typing never waits; the count and the highlights follow the newest query |
+
+## 15. Rendered preview
+
+Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the right, resizable, and is closed in a window narrower than 720 points.
+
+| # | Do | Expect |
+|---|---|---|
+| 15.1 | Edit the text while the preview is open | The preview is laid out for the newest text and width; an older result is not shown |
+| 15.2 | Scroll the source, then scroll the preview | The other pane follows; neither jumps back |
+| 15.3 | Narrow the window below 720 points, or close every file | The preview is not shown |
+| 15.4 | Press `Ctrl+Shift+M` twice, quit and run weft again | It toggles; the last state comes back |
+| 15.5 | Click a line of the preview | The caret goes to that place in the source (never inside a character) |
+| 15.6 | Press `Ctrl+F` and type a word | The matches are tinted in the preview too |
+| 15.7 | Open an empty file with the preview on | The pane says there is nothing to preview |
+| 15.8 | Type in a large file with the preview open | Typing never waits; the preview catches up |
+| 15.9 | Look at the pane in the light and the dark theme, with long Japanese lines, a wide table and a code block, and while resizing | Lines wrap at the pane's width; colours are the theme's; nothing overlaps |

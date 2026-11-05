@@ -131,6 +131,11 @@ desc = "Go to tab 9"
 # the Replace field replaces; Esc closes the bar.
 
 [[app.keymap]]
+on = "<C-S-m>"
+run = "view.toggle_preview"
+desc = "Toggle the preview"
+
+[[app.keymap]]
 on = "<C-f>"
 run = "find.open"
 desc = "Find"

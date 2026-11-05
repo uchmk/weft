@@ -106,6 +106,23 @@ impl View {
         self.page
     }
 
+    /// The line at the top of the view (0 before the first frame).
+    pub fn top_line(&self) -> usize {
+        if self.row_h > 0.0 {
+            (self.scroll.y / self.row_h).floor() as usize
+        } else {
+            0
+        }
+    }
+
+    /// Scroll so `line` is at the top, without bringing the caret into view
+    /// (the preview was scrolled and this follows it).
+    pub fn scroll_to_line(&mut self, line: usize) {
+        if self.row_h > 0.0 {
+            self.scroll.y = line as f32 * self.row_h;
+        }
+    }
+
     /// Take the keys the input method owns out of this frame while it
     /// composes. Call before the keymap reads the keys.
     pub fn swallow(&self, ctx: &egui::Context) {

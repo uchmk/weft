@@ -48,6 +48,7 @@ fixed = "{} は weft が先に読むので、ここに割り当てても動き�
 "Go to tab 7" = "7 番目のタブへ"
 "Go to tab 8" = "8 番目のタブへ"
 "Go to tab 9" = "9 番目のタブへ"
+"Toggle the preview" = "プレビューの表示を切り替える"
 "Find" = "検索"
 "Find and replace" = "検索と置換"
 "Next match" = "次の一致へ"
@@ -193,6 +194,12 @@ save = "保存して閉じる"
 discard = "保存せずに閉じる"
 full = "{0} を開けませんでした: タブがいっぱいで、{1} に保存していない変更があります"
 untitled = "無題"
+
+[preview]
+empty_title = "プレビューするものがありません"
+empty_body = "Markdown を書くと、ここに整形して表示します。"
+on = "プレビューを表示"
+off = "プレビューを隠した"
 
 [find]
 find_hint = "検索"

@@ -25,6 +25,7 @@ mod icon;
 mod keymap;
 mod notify;
 mod prefs;
+mod preview;
 mod settings;
 mod structure;
 mod tabs;
@@ -145,6 +146,8 @@ struct Doc {
     saving: usize,
     /// The find bar's search of this text: its thread and newest matches.
     finder: find::DocFinder,
+    /// The rendered preview of this text: its thread, layout and scroll.
+    preview: preview::DocPreview,
 }
 
 impl Doc {
@@ -153,6 +156,7 @@ impl Doc {
     fn new(wake: impl Fn() + Send + Sync + 'static) -> Self {
         let wake = std::sync::Arc::new(wake);
         let for_find = wake.clone();
+        let for_preview = wake.clone();
         Self {
             editor: None,
             view: view::View::default(),
@@ -161,6 +165,7 @@ impl Doc {
             selected: count::Selected::default(),
             saving: 0,
             finder: find::DocFinder::new(move || for_find()),
+            preview: preview::DocPreview::new(move || for_preview()),
         }
     }
 }
@@ -183,6 +188,9 @@ struct App {
     /// a widget of it has the focus (then the document does not type).
     find: ito_find::FindBar,
     find_focus: bool,
+    /// The rendered preview beside the source is wanted (kept in preview.toml).
+    preview_open: bool,
+    preview_writer: ito_common::kept::Writer,
     /// The window, for the workers of the documents opened later.
     ctx: egui::Context,
     /// The open files as tabs (src/tabs.rs); `doc` is the front one's
@@ -359,6 +367,11 @@ impl App {
             doc: Doc::new(move || wake.request_repaint()),
             find: ito_find::FindBar::default(),
             find_focus: false,
+            preview_open: live && preview::read_open(),
+            preview_writer: ito_common::kept::Writer::new(
+                preview::state_path().unwrap_or_default(),
+                live && preview::state_path().is_some(),
+            ),
             ctx,
             tabs: ito_tabs::Tabs::new(tab_settings.limit),
             parked: Vec::new(),
@@ -420,6 +433,8 @@ impl App {
             doc: Doc::new(|| {}),
             find: ito_find::FindBar::default(),
             find_focus: false,
+            preview_open: false,
+            preview_writer: ito_common::kept::Writer::new(PathBuf::new(), false),
             ctx: egui::Context::default(),
             tabs: ito_tabs::Tabs::new(ito_tabs::DEFAULT_LIMIT),
             parked: Vec::new(),
@@ -716,6 +731,7 @@ impl App {
             "help" => self.help.toggle(),
             "file.save" => self.save(),
             "file.open_in_editor" => self.open_in_editor(),
+            "view.toggle_preview" => self.preview_toggle(ctx),
             _ if ito_tabs::command(name).is_some() => {
                 if let (true, Some(op)) = (self.uncovered(), ito_tabs::command(name)) {
                     self.tab_op(op);
@@ -900,6 +916,7 @@ impl App {
         out.push_str(&self.tabs_report());
         out.push_str(&format!("closing: {}\n", self.closing.is_some()));
         out.push_str(&self.find_report());
+        out.push_str(&self.preview_report());
         if let Some(ed) = &self.doc.editor {
             let (line, col) = ed.line_col();
             let file = ed.path().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -1504,6 +1521,7 @@ impl App {
             // A key may have opened the help or the settings.
             let editing = self.editing();
             self.find_sync();
+            self.preview_pane(ui);
             if let Some(ed) = &mut self.doc.editor {
                 if !editing {
                     ed.seal();
@@ -1511,6 +1529,7 @@ impl App {
                 let finds: &[std::ops::Range<usize>] =
                     if self.find.open { self.doc.finder.marks(&find::key(&self.find, ed, &self.doc.finder)) } else { &[] };
                 self.doc.view.show(ui, ed, self.doc.tree.as_ref(), finds, editing);
+                self.preview_sync();
             } else {
                 // No file: the ghost stands where the document would be.
                 let look = ito_prefs::Look { c: ito_theme::colors(), q: "" };

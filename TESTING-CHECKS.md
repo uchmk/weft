@@ -1,6 +1,6 @@
 # Checklist
 
-130 checks in TESTING.md, 69 left for a person.
+139 checks in TESTING.md, 74 left for a person.
 
 ## 1. Start
 
@@ -136,3 +136,13 @@
 - [ ] **14.15** In a document where a word occurs several times, press `Ctrl+H`, type the word and a replacement, press `Ctrl+Alt+Enter`, then `Ctrl+Z` once → Every place is replaced and the status bar says how many; one `Ctrl+Z` brings all of them back 〔未訳〕
 - [ ] **14.16** With a match selected, press `Enter` in the Replace field repeatedly → Each press replaces that match and moves to the next one 〔未訳〕
 - [ ] **14.17** Type a long query one letter at a time in a large file → Typing never waits; the count and the highlights follow the newest query 〔未訳〕
+
+## 15. Rendered preview
+
+自動テスト済みなので下には出していない: 15.1, 15.2, 15.3, 15.4
+
+- [ ] **15.5** Click a line of the preview → The caret goes to that place in the source (never inside a character) 〔未訳〕
+- [ ] **15.6** Press `Ctrl+F` and type a word → The matches are tinted in the preview too 〔未訳〕
+- [ ] **15.7** Open an empty file with the preview on → The pane says there is nothing to preview 〔未訳〕
+- [ ] **15.8** Type in a large file with the preview open → Typing never waits; the preview catches up 〔未訳〕
+- [ ] **15.9** Look at the pane in the light and the dark theme, with long Japanese lines, a wide table and a code block, and while resizing → Lines wrap at the pane's width; colours are the theme's; nothing overlaps 〔未訳〕

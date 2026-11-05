@@ -53,6 +53,7 @@ fixed = "weft reads {} itself: bound here, it never runs."
 "Go to tab 7" = "Go to tab 7"
 "Go to tab 8" = "Go to tab 8"
 "Go to tab 9" = "Go to tab 9"
+"Toggle the preview" = "Toggle the preview"
 "Find" = "Find"
 "Find and replace" = "Find and replace"
 "Next match" = "Next match"
@@ -207,6 +208,12 @@ full = "Could not open {0}: the tabs are full and {1} has changes that are not s
 untitled = "Untitled"
 
 # The find and replace bar (ito-find's words), and what it says when it acts.
+[preview]
+empty_title = "Nothing to preview"
+empty_body = "Type some Markdown and it shows here."
+on = "Preview on"
+off = "Preview off"
+
 [find]
 find_hint = "Find"
 replace_hint = "Replace with"

@@ -72,6 +72,7 @@ pub const ALL: &[Def] = &[
     app(ito_tabs::cmd::GOTO[6], "Go to tab 7"),
     app(ito_tabs::cmd::GOTO[7], "Go to tab 8"),
     app(ito_tabs::cmd::GOTO[8], "Go to tab 9"),
+    app("view.toggle_preview", "Toggle the preview"),
     // Find and replace: ito-find's names, run by `App` (src/find.rs).
     app(ito_find::cmd::OPEN, "Find"),
     app(ito_find::cmd::REPLACE_OPEN, "Find and replace"),
