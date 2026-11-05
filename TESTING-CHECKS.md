@@ -1,6 +1,6 @@
 # Checklist
 
-148 checks in TESTING.md, 81 left for a person.
+151 checks in TESTING.md, 84 left for a person.
 
 ## 1. Start
 
@@ -166,3 +166,9 @@
 - [ ] **18.1** Open a document with long lines in a narrow window and press Alt+Z → Long lines fold at the pane's width; the status line announces it; line numbers sit at each line's first row 〔未訳〕
 - [ ] **18.2** With wrap on, type, select across folded lines, search, and click in a lower row → The caret, selection and match bands follow each row; the click puts the caret in that row 〔未訳〕
 - [ ] **18.3** Press Alt+Z again, then restart the app → Lines scroll sideways again; the last choice is kept across restarts 〔未訳〕
+
+## 19. Change marks in the gutter
+
+- [ ] **19.1** Open a file, type a new line, change a line, delete a line, in the light and dark themes → A green bar by the added line, a blue bar by the changed one, a small red wedge where lines were taken out 〔未訳〕
+- [ ] **19.2** Save (Ctrl+S) → The marks go; they come back only for what you edit afterwards 〔未訳〕
+- [ ] **19.3** Undo back to the text as read → The marks go 〔未訳〕

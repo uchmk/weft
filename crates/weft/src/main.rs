@@ -13,6 +13,7 @@
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod changes;
 mod commands;
 mod count;
 mod door;
@@ -142,6 +143,8 @@ struct Doc {
     /// The newest reading of the structure, and the thread that reads it.
     tree: Option<structure::Tree>,
     worker: structure::Worker,
+    /// What changed since the file was read or saved, for the gutter.
+    changes: changes::Worker,
     /// The selection's character count for the status bar, kept between frames.
     selected: count::Selected,
     saving: usize,
@@ -158,11 +161,13 @@ impl Doc {
         let wake = std::sync::Arc::new(wake);
         let for_find = wake.clone();
         let for_preview = wake.clone();
+        let for_changes = wake.clone();
         Self {
             editor: None,
             view: view::View::default(),
             tree: None,
             worker: structure::Worker::new(move || wake()),
+            changes: changes::Worker::new(move || for_changes()),
             selected: count::Selected::default(),
             saving: 0,
             finder: find::DocFinder::new(move || for_find()),
@@ -893,6 +898,9 @@ impl App {
                 self.doc.tree = Some(t);
             }
         }
+        let (base, generation) = ed.base();
+        let c = self.doc.changes.update(ed.version(), generation, base, ed.text());
+        self.doc.view.set_changes(c);
     }
 
     /// The settings cover the window; the help, if open, goes with it.

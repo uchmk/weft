@@ -28,6 +28,7 @@ ito-winres = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3
 ito-common = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["clock", "egui"] }
 ito-i18n = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["edit"] }
 ito-theme = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
+ito-diff = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The settings screen: language / clock / theme pages, keys_page, notify_page, update_card.
 ito-prefs = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["tabs"] }
 # Document tabs: the model, the saved list and the bar. ito-ipc hands a second `weft FILE` to the running window.

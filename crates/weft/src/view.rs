@@ -162,6 +162,9 @@ pub struct View {
     /// Where the caret was drawn, for the candidate window.
     caret_rect: Rect,
     ime: ito_ime::Ime,
+    /// What changed since the file was read or saved, one entry per line (the
+    /// gutter's bars). May be a version behind the text.
+    changes: crate::changes::Changes,
 }
 
 impl Default for View {
@@ -175,6 +178,7 @@ impl Default for View {
             follow: true,
             caret_rect: Rect::NOTHING,
             ime: ito_ime::Ime::new(Id::new("weft-editor")),
+            changes: crate::changes::Changes::default(),
         }
     }
 }
@@ -182,6 +186,13 @@ impl Default for View {
 impl View {
     pub fn page(&self) -> usize {
         self.page
+    }
+
+    /// Take the newest marks of what changed (a no-op while they are the same).
+    pub fn set_changes(&mut self, c: &crate::changes::Changes) {
+        if self.changes.key != c.key {
+            self.changes = c.clone();
+        }
     }
 
     /// The line at the top of the view (0 before the first frame).
@@ -405,6 +416,21 @@ impl View {
             let y = y0 + l.off;
             let number = if l.n == caret_line { c.gutter_active() } else { c.gutter() };
             gutter_painter.text(pos2(text_rect.left() - PAD, y), Align2::RIGHT_TOP, (l.n + 1).to_string(), font.clone(), number);
+            match self.changes.marks.get(l.n).copied().flatten() {
+                Some(crate::changes::Mark::Added) => {
+                    gutter_painter.rect_filled(Rect::from_min_size(pos2(rect.left() + 1.0, y), vec2(3.0, l.h)), 0.0, c.diff_added());
+                }
+                Some(crate::changes::Mark::Modified) => {
+                    gutter_painter.rect_filled(Rect::from_min_size(pos2(rect.left() + 1.0, y), vec2(3.0, l.h)), 0.0, c.diff_modified());
+                }
+                // Lines were taken out above: a small wedge on the line's top edge.
+                Some(crate::changes::Mark::Removed) => {
+                    let (x, w) = (rect.left() + 1.0, 6.0);
+                    let tri = vec![pos2(x, y - 3.0), pos2(x + w, y), pos2(x, y + 3.0)];
+                    gutter_painter.add(egui::Shape::convex_polygon(tri, c.diff_removed(), Stroke::NONE));
+                }
+                None => {}
+            }
             let line = &text[l.start..l.end];
             let marks = marks(line, tree.and_then(|t| t.hard_break(l.n)));
             // The galley's character at the boundary before character `ch`.

@@ -8,6 +8,7 @@
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ito_mdedit::{Change, SelChange, Unit};
 use ito_textbuf::{pos, Doc, Edit, Selection, Transaction};
@@ -74,6 +75,10 @@ pub struct Editor {
     /// either has changed since (an edit, an undo, a caret move), `grown`
     /// belongs to another selection and is dropped.
     grown_at: Option<(u64, Selection)>,
+    /// The text as read or last saved: what the gutter compares against, and
+    /// which one it is (it changes with each read and save).
+    base: Arc<String>,
+    base_gen: u64,
 }
 
 /// The tab width a document starts with, until the settings say otherwise.
@@ -92,7 +97,14 @@ impl Editor {
             unflanked: false,
             grown: Vec::new(),
             grown_at: None,
+            base: Arc::new(text.to_owned()),
+            base_gen: 0,
         }
+    }
+
+    /// The text as read or last saved, and a number that changes with it.
+    pub fn base(&self) -> (&Arc<String>, u64) {
+        (&self.base, self.base_gen)
     }
 
     /// Read `path`. A file that is not there yet opens empty (saving creates
@@ -608,6 +620,8 @@ impl Editor {
     pub fn saved(&mut self, version: u64) {
         if self.doc.version() == version {
             self.doc.mark_saved();
+            self.base = Arc::new(self.doc.text().to_owned());
+            self.base_gen += 1;
         }
     }
 }
