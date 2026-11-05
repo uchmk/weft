@@ -91,49 +91,16 @@ uchmk のアプリで、共通の部品は [ito](https://github.com/uchmk/ito) �
   weft が編集するユーザーの文書は別で、元の改行コード（CRLF・LF・混在）と BOM を読んだまま書き戻す（設計の「保存」）。
 - コミットと push は、`scripts/verify.sh` が `ALL OK` のときに、頼まれなくてもしてよい（`main` へ直接。force push・履歴の書き換えはしない）。
   コミットは、自分の変更だけで作業範囲が明確なら、そのまま行ってよい。push は別に考え、先に他のセッションの作業や競合がないことを確かめる（`git status`・`git fetch` のあとの差分、進行中のマージ・リベースがないか）。
-  - `git fetch` のあとにリモートの `main` が進んでいたら、勝手に rebase / merge をせず、止めて報告する。
-- コミットの安全（他のセッションが同じ作業ツリーと index を使っていることがある）:
-  - 自分が変更したファイルだけを、パスを 1 つずつ指定して `git add` する。`git add -A`・`git add .` は使わない。
-  - 他のセッションの staged / unstaged の変更を、変更・解除しない（`reset`・`restore --staged`・`stash`・`checkout --` を、他人の変更に使わない）。
-  - コミットの前に `git diff --staged --name-only` で対象を確かめる。他のセッションの staged があるときは、`git commit --only -m "…" -- <自分のパス>` で自分の分だけをコミットする。
-  - コミットのあとに `git show --stat HEAD` で、自分のファイルだけが入っていることを確かめる。ずれたら amend・reset をせず、止めて報告する。
-  - マージ・リベースの途中（`.git/MERGE_HEAD` などがある）は、部分コミットができない。他のセッションの作業なので、中断・確定をせずに待つ。
+- コミットの安全・push 前の `git fetch`・`commit --only` の手順は、グローバルの CLAUDE.md（「コミットと push」）に従う。
 - 整形は `cargo fmt`（ito と同じ `rustfmt.toml`）。clippy は `-D warnings`。
   全体を整形しただけのコミットは `.git-blame-ignore-revs` に書く（`git config blame.ignoreRevsFile .git-blame-ignore-revs`）。
 - ビルドは R:（RAM ディスク）。新しいクローンでは `pwsh -NoProfile -File %LOCALAPPDATA%\uchmk-build\cargo-ramdisk.ps1` を先に回す。
 - やることは [TODO.md](TODO.md)。版の繰り上げと CHANGELOG.md（日本語、日付は JST）はセットでコミットする。
 - 共通の仕様（common.toml・設定の画面・テーマ・時計）は ito の `docs/common-spec.md`。
 
-## subagent の使い分け
+## subagent と Advisor
 
-`.claude/agents/` の Haiku の subagent に、次の機械的な仕事を回す。
+使い方の共通ルール（`search`・`audit`・`verify` の役割、`audit` への差分の渡し方、`verify` の OK の条件、advisor に相談するタイミング）は、グローバルの CLAUDE.md と `~/.claude/agents/` にある。ここは weft 固有の分だけ。
 
-| エージェント | 委譲する仕事 |
-|---|---|
-| `search` | 広範囲の検索、構造の把握、定義・呼び出し箇所の調査（読み取り専用。`path:line` で返る） |
-| `audit` | main モデルが渡した差分の 1 次監査（読み取り専用。Bash を持たない） |
-| `verify` | `scripts/verify.sh` の実行（終了コードで OK / FAILED を判定する） |
-
-- ファイルの場所がわかっているときは、main モデルが Read / Grep を直接使う（subagent に回さない）。
-- Haiku の結果は main モデルが確認する。実装・修正・最終判断は main モデルの責任。
-- `audit` は Bash を持たず、git を自分では実行できない。main モデルが `git diff -- <path>`（unstaged）と `git diff --staged -- <path>`（staged）を別々に取り、ラベルを付けて渡す。見るパス・hunk も渡す（別セッションの変更を巻き込まない）。
-  範囲が曖昧なら、勝手に広げずに確かめる。
-- `audit` はファイル変更・ビルド・テスト・Git の状態変更を一切行わない（`tools:` が Read / Grep / Glob だけなので、技術的にもできない）。
-- `verify` はコードを変更しない（直さない・整形しない）。
-- `verify` の OK は、終了コードが 0 かつ最終行が `ALL OK: ...` のときだけ。それ以外は FAILED として扱う（Haiku の曖昧な報告を成功とみなさない）。
-- subagent に、実装・コミット・push を任せない。commit・push は main セッションだけが、`verify` が OK のあとに行う。
-
-## Advisor（Opus）の使い方
-
-`claude --model sonnet --effort high --advisor opus` で起動したとき、Sonnet は次のタイミングで Opus の advisor に積極的に相談する。
-
-1. 計画策定前: 実装方針・設計方針・変更範囲を決める前。
-2. 設計判断時: 複数の実装方法があり、保守性・安全性・性能に影響するとき。
-3. 同じ問題が 2 回発生したとき: 同じエラーや失敗を繰り返したとき。
-4. 重要な変更の前: 既存のアーキテクチャ・データ構造・公開 API に影響する変更の前。
-5. 作業完了前: 実装結果・見落とし・残るリスクの最終確認。
-
-- 助言は参考意見。採用するかは Sonnet が判断する。
-- 単純なファイル検索・既知の手順の実行・機械的な修正では相談を省略してよい。
-- 同じ問題について、不必要に繰り返し相談しない。
-- これは相談を促すルールで、呼び出しを強制する設定ではない。advisor の呼び出しは Claude Code 側の仕組みに依る。
+- `audit`: `.claude/agents/audit.md` が共通の `audit` を上書きし、weft 固有の項目（CRLF・BOM の読んだまま書き戻し、ito が受け持つ依存、バイト↔文字の変換は Document Engine の位置モジュールだけ、UI スレッドでの書き込みと重い解析、ito-prefs を使わない自前のボタン・空の一覧）を見る。
+- `verify`: weft の `scripts/verify.sh` を回す。OK は終了コード 0 かつ最終行が `ALL OK: ...`。
