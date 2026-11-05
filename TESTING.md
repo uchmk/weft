@@ -398,3 +398,4 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 33.2 | Type `[[`, press Esc, keep typing | The list closes and stays closed until a new `[[` |
 | 33.3 | Type `[[` while the input method composes | No list; the confirm Enter is not a pick |
 | 33.4 | In a vault with `img/a.png`, run `weft p.md --keys "<Wait:400><C-End>![x](im<Wait:700><Shot:p><Quit>"` (also light) | p: a list of image paths (`img/a.png`); with `[x](` all files; Enter writes the path and `)` |
+| 33.5 | In a vault with `link.md` holding `see [[買い物]] and [[nothing]]`, run `weft link.md --keys "<Wait:400><C-Home><Down><Down><Right><Right><Right><Right><Right><C-S-CR><Wait:500><Shot:a><Quit>"` (also light); then the same with the caret inside `[[nothing]]` | a: `買い物.md` is a second tab in front with the caret at its start; the missing one stays put and the status line says "nothing というノートが見つかりません" |

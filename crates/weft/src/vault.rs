@@ -82,6 +82,11 @@ pub fn wikilinks(text: &str) -> Vec<WikiLink> {
     out
 }
 
+/// The `[[link]]` the caret is in (or touches), if any.
+pub fn link_at(text: &str, caret: usize) -> Option<WikiLink> {
+    wikilinks(text).into_iter().find(|l| l.range.start <= caret && caret <= l.range.end)
+}
+
 fn links_in_line(line: &str, base: usize, out: &mut Vec<WikiLink>) {
     let b = line.as_bytes();
     let (mut i, mut in_code) = (0, false);
@@ -394,6 +399,15 @@ mod tests {
         assert_eq!(trigger("[[a]] b", 7), None);
         assert_eq!(trigger("[[a\nb", 5), None);
         assert_eq!(trigger("[[a#h", 5), None);
+    }
+
+    #[test]
+    fn link_at_finds_the_link_under_the_caret() {
+        let t = "a [[b#H|x]] c [[d]]";
+        assert_eq!(link_at(t, 5).map(|l| l.target), Some("b".to_string()));
+        assert_eq!(link_at(t, 11).map(|l| l.target), Some("b".to_string()), "just after the brackets still counts");
+        assert!(link_at(t, 12).is_none());
+        assert_eq!(link_at(t, 16).and_then(|l| l.heading), None);
     }
 
     #[test]

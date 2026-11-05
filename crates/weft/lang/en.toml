@@ -65,6 +65,7 @@ fixed = "weft reads {} itself: bound here, it never runs."
 "Fold all sections" = "Fold all sections"
 "Unfold all sections" = "Unfold all sections"
 "Show only this section" = "Show only this section"
+"Open the linked note" = "Open the linked note"
 "Next lint finding" = "Next lint finding"
 "Previous lint finding" = "Previous lint finding"
 "Fix all lint findings" = "Fix all lint findings"
@@ -315,6 +316,11 @@ saving = "Saving…"
 [empty]
 title = "No file is open"
 body = "Start weft with a Markdown file: weft FILE.md"
+
+[link]
+none = "There is no [[link]] here"
+# {0} the name in the link.
+missing = "No note named {0}"
 
 [lint]
 # {0} what was found, {1} how many in all.

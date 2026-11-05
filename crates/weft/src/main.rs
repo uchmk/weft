@@ -40,7 +40,6 @@ mod richpaste;
 mod settings;
 mod structure;
 mod tabs;
-#[allow(dead_code)] // wikilinks/resolve wait for backlinks and rename-follow
 mod vault;
 mod view;
 mod wrap;
@@ -880,6 +879,7 @@ impl App {
             }
             "heading.fold" | "heading.fold_all" | "heading.unfold_all" => self.fold_command(name),
             "view.focus" => self.focus_toggle(),
+            "link.follow" => self.follow_link(),
             "lint.next" | "lint.prev" | "lint.fix_all" => self.lint_command(name),
             ito_find::cmd::OPEN
             | ito_find::cmd::REPLACE_OPEN
@@ -1159,6 +1159,39 @@ impl App {
         let view = &mut self.doc.view;
         view.folds.set_focus(!view.folds.focused());
         view.follow = true;
+    }
+
+    /// `link.follow`: open the note the `[[link]]` at the caret names, at its
+    /// `#heading` when it has one. The vault is the folder tree around this file.
+    fn follow_link(&mut self) {
+        if !self.editing() {
+            return;
+        }
+        let (Some(ed), Some(from)) = (self.doc.editor.as_ref(), self.doc.path()) else { return };
+        let Some(link) = vault::link_at(ed.text(), ed.caret()) else {
+            let note = self.table.tr("link.none").to_owned();
+            self.announce(note.clone());
+            self.note = Some(note);
+            return;
+        };
+        let root = vault::root_of(&from);
+        let notes = vault::scan(&root);
+        let Some(rel) = vault::resolve(&notes, &link.target) else {
+            let note = self.table.trf("link.missing", &[&link.target]);
+            self.announce(note.clone());
+            self.note = Some(note);
+            return;
+        };
+        let path = root.join(rel);
+        let line = link.heading.as_deref().and_then(|h| {
+            let text = std::fs::read_to_string(&path).ok()?;
+            let h = h.to_lowercase();
+            ito_outline::headings(&text, 6).into_iter().find(|x| x.title.to_lowercase() == h).map(|x| x.line + 1)
+        });
+        self.open(&path);
+        if let Some(line) = line {
+            Goto { line, col: 1 }.apply(self);
+        }
     }
 
     /// `lint.next` and `lint.prev` (the caret goes to the finding, whose kind

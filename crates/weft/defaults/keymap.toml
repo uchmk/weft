@@ -181,6 +181,11 @@ run = "view.focus"
 desc = "Show only this section"
 
 [[app.keymap]]
+on = "<C-S-Enter>"
+run = "link.follow"
+desc = "Open the linked note"
+
+[[app.keymap]]
 on = "<F8>"
 run = "lint.next"
 desc = "Next lint finding"
