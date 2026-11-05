@@ -100,11 +100,11 @@ impl Tree {
 /// Read `text` (at `version`) whole.
 #[cfg(test)]
 pub fn read(version: u64, text: &str) -> Tree {
-    read_in(version, text, None)
+    read_in(version, text, None, &crate::lint::Cfg::default())
 }
 
 /// [`read`] for a note in the folder `base`: its relative links are checked against it.
-pub fn read_in(version: u64, text: &str, base: Option<&std::path::Path>) -> Tree {
+pub fn read_in(version: u64, text: &str, base: Option<&std::path::Path>, lint: &crate::lint::Cfg) -> Tree {
     let (kinds, breaks) = paint(text);
     let counts = crate::count::Index::new(text);
     let lines = lines(text, &kinds);
@@ -117,7 +117,7 @@ pub fn read_in(version: u64, text: &str, base: Option<&std::path::Path>) -> Tree
         breaks: by_line(text, &breaks),
         chars: counts.total(),
         counts,
-        lint: crate::lint::run(text, base),
+        lint: crate::lint::run(text, base, lint),
     }
 }
 
@@ -315,10 +315,14 @@ fn minimap_rows(text: &str, lines: &[Runs]) -> Vec<ito_minimap::Row> {
         .collect()
 }
 
+/// A reading to do: the text at a version, its folder, the lint options.
+type Job = (u64, String, Option<std::path::PathBuf>, crate::lint::Cfg);
+
 /// The thread that reads the text. A job is the text at a version; while it
 /// reads, newer jobs pile up and only the newest is read next.
 pub struct Worker {
-    tx: Sender<(u64, String, Option<std::path::PathBuf>)>,
+    tx: Sender<Job>,
+    lint: crate::lint::Cfg,
     rx: Receiver<Tree>,
     asked: Option<u64>,
 }
@@ -326,14 +330,14 @@ pub struct Worker {
 impl Worker {
     /// `wake` is called when a reading is ready (the window's repaint).
     pub fn new(wake: impl Fn() + Send + 'static) -> Worker {
-        let (tx, jobs) = mpsc::channel::<(u64, String, Option<std::path::PathBuf>)>();
+        let (tx, jobs) = mpsc::channel::<Job>();
         let (done, rx) = mpsc::channel();
         let run = move || {
             while let Ok(mut job) = jobs.recv() {
                 while let Ok(newer) = jobs.try_recv() {
                     job = newer;
                 }
-                if done.send(read_in(job.0, &job.1, job.2.as_deref())).is_err() {
+                if done.send(read_in(job.0, &job.1, job.2.as_deref(), &job.3)).is_err() {
                     return;
                 }
                 wake();
@@ -341,7 +345,7 @@ impl Worker {
         };
         // Without the thread there are no colours, and the text is still there.
         let _ = std::thread::Builder::new().name("weft-structure".into()).spawn(run);
-        Worker { tx, rx, asked: None }
+        Worker { tx, lint: crate::lint::Cfg::default(), rx, asked: None }
     }
 
     /// Ask for a reading of `text` at `version`, unless it was asked already.
@@ -350,7 +354,15 @@ impl Worker {
             return;
         }
         self.asked = Some(version);
-        let _ = self.tx.send((version, text.to_owned(), base.map(|p| p.to_owned())));
+        let _ = self.tx.send((version, text.to_owned(), base.map(|p| p.to_owned()), self.lint.clone()));
+    }
+
+    /// The lint options to read with. A change is read again: the text is asked for once more.
+    pub fn set_lint(&mut self, cfg: &crate::lint::Cfg) {
+        if self.lint != *cfg {
+            self.lint = cfg.clone();
+            self.asked = None;
+        }
     }
 
     /// The version last asked for.

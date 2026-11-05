@@ -1,6 +1,6 @@
 # Checklist
 
-190 checks in TESTING.md, 123 left for a person.
+194 checks in TESTING.md, 127 left for a person.
 
 ## 1. Start
 
@@ -235,3 +235,10 @@
 - [ ] **27.4** Press Ctrl+E after scrolling → Your editor opens the file at the line on top 〔未訳〕
 - [ ] **27.5** Append a line to the file from another program → The line count grows; no "reloaded" note 〔未訳〕
 - [ ] **27.6** Look at it in the light and the dark theme → The same layout; line numbers readable 〔未訳〕
+
+## 28. Lint settings
+
+- [ ] **28.1** Write `[lint]` / `info = true` in config.toml, open a note with a line ending in three spaces → A dotted, quiet line under the spaces; F8 reaches it 〔未訳〕
+- [ ] **28.2** Set `spacing = "space"` and write `日本語ABC日本語` → Dotted lines under the places that touch Latin text 〔未訳〕
+- [ ] **28.3** Set `info = false` (or remove it) while the note is open → The dotted lines go; the warnings and errors stay 〔未訳〕
+- [ ] **28.4** Write `tone = "x"` → A notice says the value is not one of auto, polite, plain; the default is used 〔未訳〕

@@ -53,6 +53,8 @@ pub struct Config {
     pub tab_width: usize,
     pub tab_char: bool,
     pub editor_warn: Vec<String>,
+    /// `[lint]`.
+    pub lint: crate::lint::Cfg,
 }
 
 /// The tab widths the Editing page offers.
@@ -169,7 +171,13 @@ fn read_config(path: &Path) -> Result<Box<Config>, String> {
     let (tab_width, mut editor_warn) = read_editor(text.as_deref());
     let (tab_char, char_warn) = read_tab_char(text.as_deref());
     editor_warn.extend(char_warn);
-    Ok(Box::new(Config { notify, open, tabs, warnings, tab_width, tab_char, editor_warn }))
+    let (lint, lint_warn) = crate::lint::read(text.as_deref());
+    for w in lint_warn {
+        if !warnings.contains(&w) {
+            warnings.push(w);
+        }
+    }
+    Ok(Box::new(Config { notify, open, tabs, warnings, tab_width, tab_char, editor_warn, lint }))
 }
 
 /// One lock for every writer of config.toml from the window.
@@ -284,6 +292,8 @@ pub struct Prefs {
     /// `[editor] tab_char`: Tab puts in a tab character instead of spaces.
     pub tab_char: bool,
     pub editor_warn: Vec<String>,
+    /// `[lint]` of config.toml.
+    pub lint: crate::lint::Cfg,
     tx: Sender<Reload>,
     rx: Receiver<Reload>,
     wake: Option<egui::Context>,
@@ -319,6 +329,7 @@ impl Prefs {
             notify_drafts: ito_prefs::Drafts::new(),
             tab_width: crate::engine::TAB_WIDTH,
             tab_char: false,
+            lint: crate::lint::Cfg::default(),
             editor_warn: Vec::new(),
             tx,
             rx,
@@ -417,6 +428,7 @@ impl Prefs {
                     let c = *c;
                     (self.notify, self.open, self.tabs, self.notify_warn) = (c.notify, c.open, c.tabs, c.warnings);
                     (self.tab_width, self.tab_char, self.editor_warn) = (c.tab_width, c.tab_char, c.editor_warn);
+                    self.lint = c.lint;
                 }
                 // Unreadable (being written, say): the pages keep what they
                 // had, and say so.

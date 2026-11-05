@@ -996,6 +996,7 @@ impl App {
         } else {
             std::time::Duration::ZERO
         };
+        self.doc.worker.set_lint(&self.prefs.lint);
         if wait.is_zero() {
             self.doc.sent_at = Some(std::time::Instant::now());
             self.doc.worker.ask(ed.version(), ed.text(), ed.path().and_then(|p| p.parent()));
@@ -1127,7 +1128,7 @@ impl App {
         // The newest reading when it is of this text (it checked the links on the worker); else read here without touching the disk.
         let findings = match self.doc.tree.as_ref().filter(|t| t.version == ed.version()) {
             Some(t) => t.lint.clone(),
-            None => lint::run(ed.text(), None),
+            None => lint::run(ed.text(), None, &self.prefs.lint),
         };
         let note = if name == "lint.fix_all" {
             let n = findings.iter().filter(|f| f.fix.is_some()).count();

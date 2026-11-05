@@ -2,6 +2,13 @@
 
 形式は [Keep a Changelog](https://keepachangelog.com/ja/1.1.0/)、日付は JST。
 
+## [0.2.37] - 2026-11-05
+
+### 追加
+
+- lint の設定を `config.toml` の `[lint]` で書けるようにした。`info = true` で情報レベルの指摘（行末の空白・全角の空白・全角の英数・和欧文の間の空白）を点線で出す（`lint.next` / `lint.prev` / `lint.fix_all` の対象にもなる）。
+  `spacing`（`any` / `space` / `no_space`）・`punctuation`（`auto` / `ideographic` / `western`）・`tone`（`auto` / `polite` / `plain`）で日本語の検査の方針を選ぶ。変えると開いている文書を読み直す。書き方が違う値は通知で知らせ、既定を使う。
+
 ## [0.2.36] - 2026-11-05
 
 ### 追加

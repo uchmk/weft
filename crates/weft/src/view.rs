@@ -504,12 +504,26 @@ impl View {
                         continue;
                     }
                     let error = f.severity == ito_mdlint::Severity::Error;
-                    let stroke = if error { Stroke::new(2.0, c.diff_removed()) } else { Stroke::new(1.0, c.warning()) };
+                    let info = f.severity == ito_mdlint::Severity::Info;
+                    let stroke = match (error, info) {
+                        (true, _) => Stroke::new(2.0, c.diff_removed()),
+                        (_, true) => Stroke::new(1.0, c.gutter()),
+                        _ => Stroke::new(1.0, c.warning()),
+                    };
                     // An empty finding (a missing line) still gets a short mark.
                     for b in l.bands(l.ch(text, s, false), l.ch(text, e.max(s), false)) {
                         let (x0, x1) = (origin_x + b.1, origin_x + b.2.max(b.1 + char_w / 2.0));
                         let yy = y + b.0 + row_h - 1.0;
-                        painter.line_segment([pos2(x0, yy), pos2(x1, yy)], stroke);
+                        if info {
+                            // Dotted, quieter than a warning's line (and not by colour alone).
+                            let mut x = x0;
+                            while x < x1 {
+                                painter.line_segment([pos2(x, yy), pos2((x + 2.0).min(x1), yy)], stroke);
+                                x += 4.0;
+                            }
+                        } else {
+                            painter.line_segment([pos2(x0, yy), pos2(x1, yy)], stroke);
+                        }
                     }
                 }
             }
