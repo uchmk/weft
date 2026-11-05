@@ -193,12 +193,13 @@ impl App {
             }
             // Nothing to step through or replace yet: the bar opens for the query.
             _ if !self.find.open || self.find.find.is_empty() => {
-                let open = if name == cmd::REPLACE_ALL { cmd::REPLACE_OPEN } else { cmd::OPEN };
+                let open = if name == cmd::REPLACE_ALL || name == cmd::REPLACE_ONE { cmd::REPLACE_OPEN } else { cmd::OPEN };
                 self.find.command(open, None);
                 ctx.request_repaint();
             }
             cmd::NEXT => self.find_step(true),
             cmd::PREV => self.find_step(false),
+            cmd::REPLACE_ONE => self.find_replace_one(),
             cmd::REPLACE_ALL => self.find_replace_all(),
             _ => {}
         }

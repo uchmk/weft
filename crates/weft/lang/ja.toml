@@ -55,6 +55,7 @@ fixed = "{} は weft が先に読むので、ここに割り当てても動き�
 "Find and replace" = "検索と置換"
 "Next match" = "次の一致へ"
 "Previous match" = "前の一致へ"
+"Replace this match" = "この一致を置換"
 "Replace all" = "すべて置換"
 "Move left" = "左へ"
 "Move right" = "右へ"

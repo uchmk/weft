@@ -80,6 +80,7 @@ pub const ALL: &[Def] = &[
     app(ito_find::cmd::REPLACE_OPEN, "Find and replace"),
     app(ito_find::cmd::NEXT, "Next match"),
     app(ito_find::cmd::PREV, "Previous match"),
+    app(ito_find::cmd::REPLACE_ONE, "Replace this match"),
     app(ito_find::cmd::REPLACE_ALL, "Replace all"),
     key("cursor.left", "Move left"),
     key("cursor.right", "Move right"),

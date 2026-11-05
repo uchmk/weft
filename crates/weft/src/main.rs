@@ -823,7 +823,12 @@ impl App {
                     self.tab_op(op);
                 }
             }
-            ito_find::cmd::OPEN | ito_find::cmd::REPLACE_OPEN | ito_find::cmd::NEXT | ito_find::cmd::PREV | ito_find::cmd::REPLACE_ALL => {
+            ito_find::cmd::OPEN
+            | ito_find::cmd::REPLACE_OPEN
+            | ito_find::cmd::NEXT
+            | ito_find::cmd::PREV
+            | ito_find::cmd::REPLACE_ONE
+            | ito_find::cmd::REPLACE_ALL => {
                 if self.uncovered() {
                     self.find_command(ctx, name);
                 }
