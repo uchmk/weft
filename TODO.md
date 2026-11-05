@@ -155,7 +155,7 @@
   非可逆 WebP の手段は ito・kura に無かった（kura は `image` で読むだけ、`image` の書き出しは可逆のみ。クリップボードの画像を読む部品も無い）。
   uchmk/ito#162 で頼み、ito の v0.228.0（c77aba9）の `ito-image` で入った（`clipboard_image()` で RGBA、透明を残す非可逆 WebP の `encode_webp`。
   テストでは `ito_image::fake` か `ITO_CLIPBOARD_IMAGE`）。4K ではエンコードが重いのでワーカーで呼ぶ。rev を上げたあと、フェーズ 4 の順で取りかかる。
-- [ ] 貼り付けの賢さ（HTML・表 → Markdown）。選択に URL → `[選択](URL)` は 0.2.25 で済み。
+- [ ] 貼り付けの賢さ（HTML・表 → Markdown）。選択に URL → `[選択](URL)` は 0.2.25 で済み。HTML → Markdown と TSV → 表は ito に無いので uchmk/ito#197 で頼んだ（入ってから weft の貼り付けに繋ぐ）。
 - [ ] 文書のタブ（2026-11-03 にユーザーが頼んだ）: 1 つの窓で複数の `.md` を開いて切り替える。設定で、タブの出し方（いつも・2 つ以上のとき・出さない）、
   外から開いたファイルを動いている窓のタブにするか新しい窓にするか、起動時に前のタブを開き直すかを選ぶ。タブの型とタブの帯は ito に無い
   （michi・tsumugi はそれぞれ自前）ので uchmk/ito#175 で頼んだ。kura の opener から開いたファイルを動いている窓へ渡す所（`ito-ipc`）も同じ Issue に書いた。
