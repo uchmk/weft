@@ -9,9 +9,9 @@ use std::ops::Range;
 use crate::engine::Editor;
 use crate::structure::Tree;
 
-/// One folded heading.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Key {
+/// One folded heading (also what is kept between runs).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Key {
     index: usize,
     level: u8,
     title: String,
@@ -41,6 +41,17 @@ pub struct Folds {
 }
 
 impl Folds {
+    /// The folded headings, for keeping between runs.
+    pub fn keys(&self) -> &[Key] {
+        &self.keys
+    }
+
+    /// Bring back folds kept by an earlier run; they find their headings at the next reading.
+    pub fn restore(&mut self, keys: Vec<Key>) {
+        self.keys = keys;
+        self.stamp = None;
+    }
+
     /// The folded lines, in order.
     #[cfg(test)]
     pub fn hidden(&self) -> &[Hidden] {
@@ -271,6 +282,16 @@ d
         assert_eq!(lines, [0..4, 8..ed.line_count()]);
         f.set_focus(false);
         assert!(f.view_hidden().is_empty());
+    }
+
+    #[test]
+    fn kept_folds_come_back_on_their_headings() {
+        let (f, _, _) = folds(DOC, &[1]);
+        let kept = f.keys().to_vec();
+        let (mut g, tree, ed) = folds(DOC, &[]);
+        g.restore(kept);
+        g.refresh(Some(&tree), &ed);
+        assert_eq!(g.hidden(), f.hidden());
     }
 
     #[test]

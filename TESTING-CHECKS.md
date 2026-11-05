@@ -1,6 +1,6 @@
 # Checklist
 
-194 checks in TESTING.md, 127 left for a person.
+197 checks in TESTING.md, 130 left for a person.
 
 ## 1. Start
 
@@ -242,3 +242,9 @@
 - [ ] **28.2** Set `spacing = "space"` and write `日本語ABC日本語` → Dotted lines under the places that touch Latin text 〔未訳〕
 - [ ] **28.3** Set `info = false` (or remove it) while the note is open → The dotted lines go; the warnings and errors stay 〔未訳〕
 - [ ] **28.4** Write `tone = "x"` → A notice says the value is not one of auto, polite, plain; the default is used 〔未訳〕
+
+## 29. Folds kept between runs
+
+- [ ] **29.1** Fold a section with Alt+F, close weft, open the same file again → The section is folded again (`## B … 3`) 〔未訳〕
+- [ ] **29.2** Unfold all (`heading.unfold_all`), close and open again → Nothing is folded; `folds.toml` in the state folder has no entry for the file 〔未訳〕
+- [ ] **29.3** Fold a section, edit the file elsewhere so the heading moves, close and open again → The fold is on the same heading (found by level and title) 〔未訳〕

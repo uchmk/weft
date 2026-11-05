@@ -23,6 +23,7 @@ mod envreport;
 mod external;
 mod find;
 mod fold;
+mod foldkeep;
 mod help;
 mod i18n;
 mod icon;
@@ -272,6 +273,9 @@ struct App {
     /// Unsaved text copied for a crash (src/recovery.rs): where, what was
     /// last copied, when, and what a crashed run left (the question's list).
     recovery_writer: ito_common::kept::Writer,
+    /// The folds kept for the files last folded, and the writer of `folds.toml`.
+    fold_store: Vec<foldkeep::Entry>,
+    fold_writer: ito_common::kept::Writer,
     recovery_marks: Vec<(PathBuf, u64)>,
     recovery_at: std::time::Instant,
     recover: Vec<recovery::Entry>,
@@ -462,6 +466,11 @@ impl App {
                 recovery::state_path().unwrap_or_default(),
                 live && recovery::state_path().is_some(),
             ),
+            fold_store: if live || std::env::var_os("WEFT_STATE_HOME").is_some() { foldkeep::read() } else { Vec::new() },
+            fold_writer: ito_common::kept::Writer::new(
+                foldkeep::state_path().unwrap_or_default(),
+                live && foldkeep::state_path().is_some(),
+            ),
             recovery_marks: Vec::new(),
             recovery_at: std::time::Instant::now() - std::time::Duration::from_secs(60),
             recover: if live || std::env::var_os("WEFT_STATE_HOME").is_some() { recovery::read() } else { Vec::new() },
@@ -533,6 +542,8 @@ impl App {
             dirwatch: ito_common::dirwatch::DirWatcher::new(|| {}),
             watch_wait: Vec::new(),
             asked: Vec::new(),
+            fold_store: Vec::new(),
+            fold_writer: ito_common::kept::Writer::new(PathBuf::new(), false),
             recovery_writer: ito_common::kept::Writer::new(PathBuf::new(), false),
             recovery_marks: Vec::new(),
             recovery_at: std::time::Instant::now() - std::time::Duration::from_secs(60),
@@ -1670,6 +1681,7 @@ impl App {
         self.take_files(&ctx);
         self.take_external(&ctx);
         self.take_recovery(&ctx);
+        self.take_folds();
         self.take_door(&ctx);
         self.quit_after_save(&ctx);
         // The window's close (the bar's ×, Alt+F4) asks first, as Ctrl+Q does.

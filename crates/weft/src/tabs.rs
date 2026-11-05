@@ -44,6 +44,7 @@ impl App {
             doc.editor = Some(engine::Editor::open_big(path));
         } else {
             doc.editor = Some(engine::Editor::open(path)?);
+            doc.view.folds.restore(self.kept_folds(path));
         }
         Ok(doc)
     }
