@@ -362,3 +362,12 @@ Toggle `Ctrl+Shift+M` (the palette: "Toggle the preview"). The pane is on the ri
 | 29.2 | Unfold all (`heading.unfold_all`), close and open again | Nothing is folded; `folds.toml` in the state folder has no entry for the file |
 | 29.3 | Fold a section, edit the file elsewhere so the heading moves, close and open again | The fold is on the same heading (found by level and title) |
 
+## 30. Fold triangle in the gutter
+
+| # | Do | Expect |
+|---|---|---|
+| 30.1 | Fold a section with Alt+F | A ▸ shows right of that heading's line number (light and dark), clear of the digits |
+| 30.2 | Move the pointer over the gutter row of an unfolded heading that has a body | A ▾ shows on that row only; it goes when the pointer leaves |
+| 30.3 | Click the ▾ / ▸ | The section folds / unfolds; the caret does not move into the text |
+| 30.4 | Put the caret in a body, then click the heading's ▾ | The section folds and the caret is on the heading |
+| 30.5 | Click a line number or the text next to a heading | The caret is placed as usual; nothing folds |

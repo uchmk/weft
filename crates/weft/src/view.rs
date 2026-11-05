@@ -25,6 +25,8 @@ use crate::structure::Tree;
 const SIZE: f32 = 14.0;
 /// Space between the gutter's numbers and the text, and before the numbers.
 const PAD: f32 = 8.0;
+/// The room the fold triangle takes in the gutter, right of the numbers.
+const TRI: f32 = 8.0;
 
 /// A line laid out for this frame.
 struct Line {
@@ -297,7 +299,7 @@ impl View {
         let text = ed.text();
         let total = ed.line_count();
         let digits = total.to_string().len().max(2);
-        let gutter = digits as f32 * char_w + 2.0 * PAD;
+        let gutter = digits as f32 * char_w + 2.0 * PAD + TRI;
         // The minimap takes the right edge when the pane is wide enough for both.
         let map = tree.filter(|t| ito_minimap::fits(t.rows.len(), rect.width() - gutter, char_w));
         let strip_w = map.map_or(0.0, |_| ito_minimap::strip_width(char_w));
@@ -399,8 +401,38 @@ impl View {
             self.follow = false;
         }
 
+        // --- The fold triangle in the gutter: the heading on the row under `p` that can be folded or is.
+        let tri_zone = |x: f32| x >= text_rect.left() - PAD - TRI && x < text_rect.left();
+        let fresh = tree.filter(|t| t.version == ed.version());
+        let fold_row = |folds: &crate::fold::Folds, p: egui::Pos2| -> Option<usize> {
+            let t = fresh?;
+            if !tri_zone(p.x) {
+                return None;
+            }
+            let l = lines.iter().find(|l| p.y >= y0 + l.off && p.y < y0 + l.off + l.h)?;
+            let i = t.headings.binary_search_by_key(&l.n, |h| h.line).ok()?;
+            let h = &t.headings[i];
+            (folds.hides(l.n).is_some() || h.section.end > h.range.end + 1).then_some(i)
+        };
+        let press_on_triangle = keys && ui.input(|i| i.pointer.press_origin()).is_some_and(|o| fold_row(&self.folds, o).is_some());
+        let mut to_heading = None;
+        if press_on_triangle && ui.input(|i| i.pointer.primary_pressed()) {
+            let row = ui.input(|i| i.pointer.press_origin()).and_then(|o| fold_row(&self.folds, o));
+            if let (Some(t), Some(i)) = (fresh, row) {
+                let was_folded = self.folds.hides(t.headings[i].line).is_some();
+                self.folds.toggle(t, i);
+                // A caret in the body would open the fold again at once: it goes to the heading.
+                let h = &t.headings[i];
+                if !was_folded && ed.caret() >= h.range.end && ed.caret() < h.section.end {
+                    to_heading = Some(h.range.start);
+                }
+                self.follow = true;
+            }
+        }
+        let hover_row = ui.input(|i| i.pointer.hover_pos()).filter(|p| p.x < text_rect.left() && rect.contains(*p));
+
         // --- The mouse: a click puts the caret, a drag (or Shift+click) selects.
-        if keys && !lines.is_empty() && response.is_pointer_button_down_on() && !ui.rect_contains_pointer(strip) {
+        if keys && !press_on_triangle && !lines.is_empty() && response.is_pointer_button_down_on() && !ui.rect_contains_pointer(strip) {
             let (pressed, primary, shift) = ui.input(|i| (i.pointer.primary_pressed(), i.pointer.primary_down(), i.modifiers.shift));
             if let (true, Some(p)) = (primary, response.interact_pointer_pos()) {
                 let l = lines.iter().find(|l| p.y < y0 + l.off + l.h).unwrap_or(&lines[lines.len() - 1]);
@@ -413,6 +445,10 @@ impl View {
                     ui.ctx().request_repaint();
                 }
             }
+        }
+
+        if let Some(b) = to_heading {
+            ed.set_caret(b, false);
         }
 
         // --- Painting.
@@ -430,7 +466,22 @@ impl View {
         for l in &lines {
             let y = y0 + l.off;
             let number = if l.n == caret_line { c.gutter_active() } else { c.gutter() };
-            gutter_painter.text(pos2(text_rect.left() - PAD, y), Align2::RIGHT_TOP, (l.n + 1).to_string(), font.clone(), number);
+            gutter_painter.text(pos2(text_rect.left() - PAD - TRI, y), Align2::RIGHT_TOP, (l.n + 1).to_string(), font.clone(), number);
+            // Folded: ▸ always; foldable: ▾ while the pointer is on the gutter row.
+            {
+                let folded = self.folds.hides(l.n).is_some();
+                let on_row = hover_row.is_some_and(|p| p.y >= y && p.y < y + l.h);
+                if (folded || on_row) && fold_row(&self.folds, pos2(text_rect.left() - 1.0, y + 1.0)).is_some() {
+                    let (cx, cy, s) = (text_rect.left() - PAD / 2.0 - 1.0, y + row_h / 2.0, 3.0);
+                    let tri = if folded {
+                        vec![pos2(cx - s * 0.6, cy - s), pos2(cx + s * 0.8, cy), pos2(cx - s * 0.6, cy + s)]
+                    } else {
+                        vec![pos2(cx - s, cy - s * 0.6), pos2(cx + s, cy - s * 0.6), pos2(cx, cy + s * 0.8)]
+                    };
+                    let tone = if folded { c.gutter_active() } else { c.gutter() };
+                    gutter_painter.add(egui::Shape::convex_polygon(tri, tone, Stroke::NONE));
+                }
+            }
             match self.changes.marks.get(l.n).copied().flatten() {
                 Some(crate::changes::Mark::Added) => {
                     gutter_painter.rect_filled(Rect::from_min_size(pos2(rect.left() + 1.0, y), vec2(3.0, l.h)), 0.0, c.diff_added());

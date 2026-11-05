@@ -1,6 +1,6 @@
 # Checklist
 
-197 checks in TESTING.md, 130 left for a person.
+202 checks in TESTING.md, 135 left for a person.
 
 ## 1. Start
 
@@ -248,3 +248,11 @@
 - [ ] **29.1** Fold a section with Alt+F, close weft, open the same file again → The section is folded again (`## B … 3`) 〔未訳〕
 - [ ] **29.2** Unfold all (`heading.unfold_all`), close and open again → Nothing is folded; `folds.toml` in the state folder has no entry for the file 〔未訳〕
 - [ ] **29.3** Fold a section, edit the file elsewhere so the heading moves, close and open again → The fold is on the same heading (found by level and title) 〔未訳〕
+
+## 30. Fold triangle in the gutter
+
+- [ ] **30.1** Fold a section with Alt+F → A ▸ shows right of that heading's line number (light and dark), clear of the digits 〔未訳〕
+- [ ] **30.2** Move the pointer over the gutter row of an unfolded heading that has a body → A ▾ shows on that row only; it goes when the pointer leaves 〔未訳〕
+- [ ] **30.3** Click the ▾ / ▸ → The section folds / unfolds; the caret does not move into the text 〔未訳〕
+- [ ] **30.4** Put the caret in a body, then click the heading's ▾ → The section folds and the caret is on the heading 〔未訳〕
+- [ ] **30.5** Click a line number or the text next to a heading → The caret is placed as usual; nothing folds 〔未訳〕
