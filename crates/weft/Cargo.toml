@@ -20,61 +20,61 @@ name = "make-bugform"
 test = true
 
 [build-dependencies]
-ito-winres = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-winres = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 
 [dependencies]
 # Every ito crate at the same rev. scripts/ito-first.py says which crates an
 # app must have and which it must not replace; what ito lacks, ask ito for.
-ito-common = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19", features = ["clock", "egui"] }
-ito-i18n = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19", features = ["edit"] }
-ito-theme = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-common = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["clock", "egui"] }
+ito-i18n = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["edit"] }
+ito-theme = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The settings screen: language / clock / theme pages, keys_page, notify_page, update_card.
-ito-prefs = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19", features = ["tabs"] }
+ito-prefs = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["tabs"] }
 # Document tabs: the model, the saved list and the bar. ito-ipc hands a second `weft FILE` to the running window.
-ito-tabs = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19", features = ["egui"] }
-ito-ipc = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
-ito-keys = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19", features = ["egui"] }
-ito-keymap = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-tabs = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["egui"] }
+ito-ipc = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
+ito-keys = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["egui"] }
+ito-keymap = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # `--keys "<script>"`: the real window driven without a person.
-ito-keyscript = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-keyscript = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # What a screen reader says: saved / could not save, a command that did
 # nothing here, the quit question (and what `--keys`' <Announced:> checks).
-ito-a11y = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19", features = ["egui"] }
+ito-a11y = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["egui"] }
 # `?` / F1: the key help.
-ito-help = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-help = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # System notification, sound, webhook.
-ito-notify = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-notify = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # F12: an issue form filled with the version, OS and what the app knows.
-ito-bugreport = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-bugreport = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The window's own title bar (drag, caption buttons, the palette box, the bell).
-ito-titlebar = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-titlebar = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The bottom status bar: the app's items, the clock at the right end.
-ito-statusbar = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-statusbar = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The question before quitting with changes not saved.
-ito-confirm = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-confirm = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The list the bell opens.
-ito-notices = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-notices = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # Ctrl+Shift+P. Optional: drop it when the app has no commands to list.
-ito-palette = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-palette = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # `weft.com` and the answers `out` and `err` write.
-ito-console = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-console = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The settings' "open the file / folder", and `$EDITOR` at the caret (Ctrl+E).
-ito-openin = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-openin = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The monospace face common.toml names (mono_font), with the Japanese one behind it.
-ito-fonts = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19", features = ["egui"] }
+ito-fonts = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494", features = ["egui"] }
 # The Document Engine: the buffer, positions, the selection and the undo history.
-ito-textbuf = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-textbuf = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # Search and replace: the bar (Ctrl+F / Ctrl+H), and the matcher it and the replace share.
-ito-find = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
-ito-match = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-find = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
+ito-match = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The structure commands (blocks, sections, lists, tasks, tables) as `Change`s.
-ito-mdedit = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-mdedit = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The colours of fenced code.
-ito-syntax = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-syntax = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # Japanese input: the preedit, the commits and the candidate window's place.
-ito-ime = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-ime = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The headings and their sections, and the options Markdown is read with in uchmk.
-ito-outline = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-outline = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
 # The structure tree and the colours, read with ito-outline's options (worker thread only).
 pulldown-cmark = { version = "0.13", default-features = false }
 # config.toml's [notify] (the settings' Notifications page).
@@ -92,4 +92,4 @@ test-hooks = ["ito-notify/test-sink"]
 
 [dev-dependencies]
 # TESTING.md -> the lanes' check tables (examples/make-testcheck.rs).
-ito-testcheck = { git = "https://github.com/uchmk/ito", rev = "e753ce207e2b423f9b524757fc5478f21f3a5a19" }
+ito-testcheck = { git = "https://github.com/uchmk/ito", rev = "4902466675c7c43895c3ab43ba802770d8d56494" }
